@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OphthaSim — Virtual Patient Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="design.css" />
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <!-- Data & Cases -->
+  <script src="data.js"></script>
+  <script src="cases-extra.js"></script>
+  <script src="case-tracks.js"></script>
+  <script src="exam-data.js"></script>
+  <script src="tutorial-scripts.js"></script>
+  <script src="osce-scoring.js"></script>
+  <!-- React Components -->
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="onboarding.jsx"></script>
+  <script type="text/babel" src="screens.jsx"></script>
+  <script type="text/babel" src="simulator.jsx"></script>
+  <script type="text/babel" src="exam-instruments.jsx"></script>
+  <script type="text/babel" src="exam-instruments-2.jsx"></script>
+  <script type="text/babel" src="exam-slitlamp.jsx"></script>
+  <script type="text/babel" src="exam-fundus.jsx"></script>
+  <!-- Phase 1 MVP — V3 station rebuilds (5 priorities) -->
+  <script type="text/babel" src="stations/station-shell.jsx"></script>
+  <script type="text/babel" src="stations/station-va-v3.jsx"></script>
+  <script type="text/babel" src="stations/station-pupil-v3.jsx"></script>
+  <script type="text/babel" src="stations/station-tonometry-v3.jsx"></script>
+  <script type="text/babel" src="stations/station-slitlamp-v3.jsx"></script>
+  <script type="text/babel" src="stations/station-fundus-v3.jsx"></script>
+  <script type="text/babel" src="ocular-exam.jsx"></script>
+  <script type="text/babel" src="case-builder.jsx"></script>
+  <script type="text/babel" src="auth-screens.jsx"></script>
+  <script type="text/babel" src="profile-features.jsx"></script>
+  <script type="text/babel" src="learning-extras.jsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // ============================================================
+    // OphthaSim — Main App (v2 — Full Feature Set)
+    // ============================================================
+
+    const SETTINGS_DEFAULT = /*EDITMODE-BEGIN*/{
+      "sound": true,
+      "motion": true,
+      "confetti": true,
+      "hints": true,
+      "theme": "light"
+    }/*EDITMODE-END*/;
+
+    function loadSettings() {
+      try {
+        const s = localStorage.getItem('ophtha_settings');
+        return s ? { ...SETTINGS_DEFAULT, ...JSON.parse(s) } : SETTINGS_DEFAULT;
+      } catch(e) { return SETTINGS_DEFAULT; }
+    }
+
+    function isFirstVisit() {
+      try { return !localStorage.getItem('ophtha_visited'); } catch(e) { return true; }
+    }
+    function markVisited() {
+      try { localStorage.setItem('ophtha_visited', '1'); } catch(e) {}
+    }
+
+    function loadAuth() {
+      try {
+        const raw = localStorage.getItem('ophtha_auth');
+        return raw ? JSON.parse(raw) : null;
+      } catch(e) { return null; }
+    }
+    function saveAuth(auth) {
+      try {
+        if (auth) localStorage.setItem('ophtha_auth', JSON.stringify(auth));
+        else localStorage.removeItem('ophtha_auth');
+      } catch(e) {}
+    }
+
+    function App() {
+      // ── Auth state ─────────────────────────────────────
+      const [auth, setAuth] = React.useState(loadAuth);
+
+      // ── Core navigation ─────────────────────────────────
+      // Landing if not logged in; otherwise dashboard
+      const [screen, setScreen]             = React.useState(() => loadAuth() ? 'dashboard' : 'landing');
+      const [screenKey, setScreenKey]       = React.useState(0);
+
+      // ── Case + session ───────────────────────────────────
+      const [currentCase, setCurrentCase]   = React.useState(null);
+      const [lastSession, setLastSession]   = React.useState(null);
+      const [examResult, setExamResult]     = React.useState(null);
+
+      // ── Mode ─────────────────────────────────────────────
+      const [playMode, setPlayMode]         = React.useState('normal');
+      const [osceSeconds, setOsceSeconds]   = React.useState(420);
+
+      // ── Modals ───────────────────────────────────────────
+      // Onboarding triggers only when the user lands on dashboard after their first login
+      const [showOnboarding, setShowOnboarding] = React.useState(false);
+      const [showModeSelect, setShowModeSelect] = React.useState(false);
+      const [pendingCase, setPendingCase]       = React.useState(null);
+      const [showSettings, setShowSettings]     = React.useState(false);
+
+      // ── User state ───────────────────────────────────────
+      const [settings, setSettings] = React.useState(loadSettings);
+      const [profile, setProfile]   = React.useState(loadProfile);
+      const [badges, setBadges]     = React.useState(() => {
+        try {
+          const saved = localStorage.getItem('ophtha_badges');
+          if (saved) {
+            const ids = JSON.parse(saved);
+            return BADGES.map(b => ({ ...b, earned: ids.includes(b.id) }));
+          }
+        } catch(e) {}
+        return BADGES;
+      });
+
+      // Persist settings
+      React.useEffect(() => {
+        try { localStorage.setItem('ophtha_settings', JSON.stringify(settings)); } catch(e) {}
+      }, [settings]);
+
+      // ── C3 (kontrak v0.7.0): muat kasus dari backend RAG bila ada.
+      // Sukses → ganti CASES dummy dgn kasus kanonik kasus-XX. Gagal/
+      // tak dikonfigurasi → tetap CASES dummy (fallback offline). ──
+      // C3 v0.7.3: loading saat LLM-judge /evaluate (bisa ~25–40s).
+      const [evaluating, setEvaluating] = React.useState(false);
+      const [casesVersion, setCasesVersion] = React.useState(0);
+      React.useEffect(() => {
+        if (!window.OPHTHA_API_BASE || !window.ApiDataStore || !window.adaptCaseSummary) return;
+        let cancelled = false;
+        window.ApiDataStore.listCases()
+          .then((list) => {
+            if (cancelled || !Array.isArray(list) || !list.length) return;
+            const adapted = list.map(window.adaptCaseSummary);
+            CASES.length = 0;
+            adapted.forEach((c) => CASES.push(c));
+            setCasesVersion((v) => v + 1);
+          })
+          .catch(() => { /* backend mati → pakai CASES dummy */ });
+        return () => { cancelled = true; };
+      }, []);
+
+      const handleSettingChange = (key, val) => {
+        setSettings(prev => {
+          const next = { ...prev, [key]: val };
+          window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+          return next;
+        });
+      };
+
+      // ── Navigation helpers ───────────────────────────────
+      const navigate = React.useCallback((s) => {
+        setScreen(s);
+        setScreenKey(k => k + 1);
+        window.scrollTo(0, 0);
+      }, []);
+
+      // ── Case click → Mode Select ─────────────────────────
+      const handleCaseClick = React.useCallback((caseData) => {
+        setPendingCase(caseData);
+        setShowModeSelect(true);
+      }, []);
+
+      // ── Mode selected → start simulator ──────────────────
+      const handleModeSelected = React.useCallback(({ mode, osceSeconds: osce }) => {
+        setPlayMode(mode);
+        setOsceSeconds(osce || 420);
+        setCurrentCase(pendingCase);
+        setShowModeSelect(false);
+        setPendingCase(null);
+        navigate('simulator');
+      }, [pendingCase, navigate]);
+
+      // ── Simulator ends → Ocular Exam ─────────────────────
+      const handleSessionEnd = React.useCallback((sessionData) => {
+        // Compute badge awards
+        const scoring = sessionData.scoring;
+        const newBadgeIds = [];
+        const updatedBadges = badges.map(b => {
+          if (b.earned) return b;
+          let earned = false;
+          if (b.id === 'first-case') earned = true;
+          if (b.id === 'red-flag' && scoring.redFlagsFound >= 3) earned = true;
+          if (b.id === 'floaters' && sessionData.discoveredDomains.has('floaters') && sessionData.discoveredDomains.has('flashes')) earned = true;
+          if (b.id === 'contact-lens' && sessionData.discoveredDomains.has('contact_lens')) earned = true;
+          if (b.id === 'systemic-link' && sessionData.discoveredDomains.has('systemic')) earned = true;
+          if (b.id === 'precision' && scoring.score >= 85) earned = true;
+          if (b.id === 'perfect' && scoring.criticalCovered >= scoring.criticalTotal && scoring.criticalTotal > 0) earned = true;
+          if (b.id === 'fast' && sessionData.elapsed < 600) earned = true;
+          if (b.id === 'streak-3' && (profile.completedCaseIds.length + 1) >= 3) earned = true;
+          if (earned) newBadgeIds.push(b.id);
+          return earned ? { ...b, earned: true } : b;
+        });
+        setBadges(updatedBadges);
+        try { localStorage.setItem('ophtha_badges', JSON.stringify(updatedBadges.filter(b => b.earned).map(b => b.id))); } catch(e) {}
+
+        const todays = (typeof _pickDailyCase === 'function') ? _pickDailyCase() : null;
+        const isDailyChallenge = todays && currentCase.id === todays.id;
+        const todayKey = (typeof _todayKey === 'function') ? _todayKey() : new Date().toISOString().slice(0,10);
+        const dailyBonus = isDailyChallenge && !(profile.dailyCompleted && profile.dailyCompleted[todayKey]) ? 50 : 0;
+
+        const xpGained = sessionData.xpGained + Math.round(scoring.score * 1.5) + dailyBonus;
+        const newProfile = {
+          ...profile,
+          xp: profile.xp + xpGained,
+          streak: profile.streak + (sessionData.osceMode ? 0 : 0),
+          completedCaseIds: profile.completedCaseIds.includes(currentCase.id)
+            ? profile.completedCaseIds
+            : [...profile.completedCaseIds, currentCase.id],
+          totalSessions: profile.totalSessions + 1,
+          sessionDates: {
+            ...(profile.sessionDates || {}),
+            [todayKey]: ((profile.sessionDates || {})[todayKey] || 0) + 1,
+          },
+          dailyCompleted: isDailyChallenge
+            ? { ...(profile.dailyCompleted || {}), [todayKey]: currentCase.id }
+            : (profile.dailyCompleted || {}),
+        };
+        setProfile(newProfile);
+        saveProfile(newProfile);
+
+        const finalSession = {
+          ...sessionData,
+          xpGained,
+          newBadges: updatedBadges.filter(b => newBadgeIds.includes(b.id)),
+        };
+        setLastSession(finalSession);
+
+        // Always go to DDx commit step (between anamnesis and exam)
+        navigate('ddx');
+      }, [badges, profile, currentCase, settings, navigate]);
+
+      // ── DDx commit → exam (if findings) or debrief ─────────────
+      const handleDDxCommit = React.useCallback((ddxCommit) => {
+        setLastSession(prev => prev ? { ...prev, ddxCommit } : prev);
+        if (EXAM_FINDINGS && EXAM_FINDINGS[currentCase.id]) {
+          navigate('exam');
+        } else {
+          const goDebrief = () => {
+            if (settings.confetti && lastSession?.scoring?.score >= 75 && window.confetti) {
+              setTimeout(() => window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 }, colors: ['#5865F2','#14B8A6','#F59E0B','#8B5CF6'] }), 600);
+            }
+            navigate('debrief');
+          };
+          // C3 sub-step 2: kasus RAG → skor dari LLM-judge backend.
+          if (currentCase && currentCase._rag && window.fetchRagScoring) {
+            setEvaluating(true);
+            window.fetchRagScoring(currentCase.id)
+              .then((sc) => {
+                if (sc) setLastSession(prev => prev ? { ...prev, scoring: { ...prev.scoring, ...sc } } : prev);
+              })
+              .catch(() => {})
+              .finally(() => { setEvaluating(false); goDebrief(); });
+          } else {
+            goDebrief();
+          }
+        }
+      }, [currentCase, settings, lastSession, navigate]);
+
+      // ── Exam complete → Debrief ───────────────────────────
+      const handleExamComplete = React.useCallback((result) => {
+        setExamResult(result);
+        if (settings.confetti && lastSession?.scoring?.score >= 65 && window.confetti) {
+          setTimeout(() => window.confetti({ particleCount: lastSession.scoring.score >= 85 ? 120 : 70, spread: 80, origin: { y: 0.5 }, colors: ['#5865F2','#14B8A6','#F59E0B','#8B5CF6','#34D399'] }), 400);
+        }
+        navigate('debrief');
+      }, [settings, lastSession, navigate]);
+
+      // ── Onboarding complete ───────────────────────────────
+      const handleOnboardingComplete = () => {
+        markVisited();
+        setShowOnboarding(false);
+      };
+
+      // ── Auth handlers ─────────────────────────────────────
+      const handleAuthSuccess = React.useCallback((credentials) => {
+        const newAuth = { ...credentials, ts: Date.now() };
+        setAuth(newAuth);
+        saveAuth(newAuth);
+        // Show product onboarding only on FIRST successful login
+        if (isFirstVisit()) setShowOnboarding(true);
+        navigate('dashboard');
+      }, [navigate]);
+
+      const handleLogout = React.useCallback(() => {
+        setAuth(null);
+        saveAuth(null);
+        navigate('landing');
+      }, [navigate]);
+
+      // ── Profile/favorite handlers ──────────────────────────────
+      const handleToggleFavorite = React.useCallback((caseId) => {
+        setProfile(prev => {
+          const favs = prev.favoriteCaseIds || [];
+          const nextFavs = favs.includes(caseId) ? favs.filter(id => id !== caseId) : [...favs, caseId];
+          const next = { ...prev, favoriteCaseIds: nextFavs };
+          saveProfile(next);
+          return next;
+        });
+      }, []);
+
+      const handleUpdateProfile = React.useCallback((updates) => {
+        setProfile(prev => {
+          const next = { ...prev, ...updates };
+          saveProfile(next);
+          return next;
+        });
+      }, []);
+
+      // ── Case builder save ─────────────────────────────────
+      const handleBuilderSave = (savedCase) => {
+        navigate('library');
+      };
+
+      // ── JS reveal fallback — force visibility after animations ──
+      React.useEffect(() => {
+        const t = setTimeout(() => {
+          document.querySelectorAll('.au,.af,.as,.ab,.ar,.al').forEach(el => {
+            el.style.opacity = '1';
+            el.style.transform = 'none';
+          });
+        }, 900);
+        return () => clearTimeout(t);
+      }, [screenKey]);
+
+      // ── Tweaks panel protocol ─────────────────────────────
+      React.useEffect(() => {
+        const handler = (e) => {
+          if (e.data?.type === '__activate_edit_mode')   setShowSettings(true);
+          if (e.data?.type === '__deactivate_edit_mode') setShowSettings(false);
+        };
+        window.addEventListener('message', handler);
+        window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+        return () => window.removeEventListener('message', handler);
+      }, []);
+
+      const closeSettings = () => {
+        setShowSettings(false);
+        window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+      };
+
+      // ── Derived ──────────────────────────────────────────
+      const isLanding   = screen === 'landing';
+      const isAuth      = screen === 'login' || screen === 'signup';
+      const isSimulator = screen === 'simulator';
+      const isExam      = screen === 'exam';
+      const isDDx       = screen === 'ddx';
+      const isBuilder   = screen === 'builder';
+      const hideHeader  = isLanding || isAuth || isSimulator || isExam || isDDx || isBuilder;
+
+      // ── Simulator top bar height ─────────────────────────
+      const simBarHeight = (isSimulator || isExam || isDDx) ? 52 : 0;
+
+      return (
+        <ToastProvider>
+          <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+
+            {/* ── Global Header ── */}
+            {!hideHeader && (
+              <AppHeader
+                screen={screen}
+                onNav={navigate}
+                onSettings={() => setShowSettings(true)}
+                profile={profile}
+                badges={badges}
+                auth={auth}
+                onLogout={handleLogout}
+              />
+            )}
+
+            {/* ── Simulator / Exam top bar ── */}
+            {(isSimulator || isExam || isDDx) && currentCase && (
+              <div style={{
+                height: 52, background: 'var(--surface)',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0 20px', flexShrink: 0,
+                position: 'sticky', top: 0, zIndex: 100,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button onClick={() => navigate('library')} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
+                    fontSize: 12, color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'Poppins', fontWeight: 500,
+                  }}>← Keluar</button>
+                  <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+                  <EyeOrb size={24} tone={currentCase.patientTone} animate={false} color={currentCase.accentColor} />
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{currentCase.title}</div>
+                  <DiffBadge level={currentCase.difficultyLevel} />
+                  {isExam && (
+                    <span style={{ fontSize: 11, background: 'var(--teal-l)', color: 'var(--teal-d)', padding: '3px 10px', borderRadius: 8, fontWeight: 700 }}>
+                      🔬 Pemeriksaan Mata
+                    </span>
+                  )}
+                  {isDDx && (
+                    <span style={{ fontSize: 11, background: 'var(--violet-l, var(--primary-l))', color: 'var(--violet, var(--primary))', padding: '3px 10px', borderRadius: 8, fontWeight: 700 }}>
+                      🎯 Komit DDx
+                    </span>
+                  )}
+                  {isSimulator && (
+                    <span style={{ fontSize: 11, background: 'var(--primary-l)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 8, fontWeight: 700 }}>
+                      {playMode === 'osce' ? '⏱️ OSCE' : playMode === 'tutorial' ? '📚 Tutorial' : '🎯 Anamnesis'}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {!(isSimulator && playMode === 'osce') && (
+                    <span style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-3)' }}>
+                      🎯 {currentCase.learningGoals[0]}
+                    </span>
+                  )}
+                  <button onClick={() => setShowSettings(true)} style={{
+                    width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)',
+                    background: 'var(--surface)', cursor: 'pointer', fontSize: 14,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>⚙️</button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Main content ── */}
+            <main key={screenKey} style={{ flex: 1 }}>
+
+              {screen === 'landing' && (
+                <LandingScreen
+                  onLogin={() => navigate('login')}
+                  onSignup={() => navigate('signup')}
+                />
+              )}
+
+              {(screen === 'login' || screen === 'signup') && (
+                <LoginScreen
+                  mode={screen}
+                  onLogin={handleAuthSuccess}
+                  onBack={() => navigate('landing')}
+                />
+              )}
+
+              {screen === 'dashboard' && (
+                <DashboardScreen
+                  onNav={navigate}
+                  onStartCase={handleCaseClick}
+                  profile={profile}
+                  badges={badges}
+                />
+              )}
+
+              {screen === 'library' && (
+                <CaseLibraryScreen
+                  onStartCase={handleCaseClick}
+                  completedCaseIds={profile.completedCaseIds}
+                  onBuildCase={() => navigate('builder')}
+                  favoriteCaseIds={profile.favoriteCaseIds || []}
+                  onToggleFavorite={handleToggleFavorite}
+                />
+              )}
+
+              {screen === 'profile' && (
+                <ProfileScreen
+                  profile={profile}
+                  badges={badges}
+                  auth={auth}
+                  onUpdateProfile={handleUpdateProfile}
+                  onStartCase={handleCaseClick}
+                  onNav={navigate}
+                />
+              )}
+
+              {screen === 'builder' && (
+                <CaseBuilderScreen
+                  onSave={handleBuilderSave}
+                  onCancel={() => navigate('library')}
+                />
+              )}
+
+              {screen === 'simulator' && currentCase && (
+                <SimulatorScreen
+                  key={`sim-${currentCase.id}-${screenKey}`}
+                  caseData={currentCase}
+                  onEnd={handleSessionEnd}
+                  profile={profile}
+                  mode={playMode}
+                  osceSeconds={osceSeconds}
+                />
+              )}
+
+              {screen === 'ddx' && currentCase && lastSession && (
+                <DDxCommitScreen
+                  caseData={currentCase}
+                  session={lastSession}
+                  mode={playMode}
+                  onSubmit={handleDDxCommit}
+                  onSkip={playMode === 'osce' ? null : () => handleDDxCommit({ skipped: true, committedAt: Date.now() })}
+                />
+              )}
+
+              {screen === 'exam' && currentCase && lastSession && (
+                <OcularExamScreen
+                  caseData={currentCase}
+                  session={lastSession}
+                  onDiagnose={handleExamComplete}
+                  onBack={() => navigate('simulator')}
+                  mode={playMode}
+                />
+              )}
+
+              {screen === 'debrief' && lastSession && currentCase && (
+                <DebriefScreen
+                  session={lastSession}
+                  caseData={currentCase}
+                  profile={profile}
+                  examResult={examResult}
+                  onRetry={() => handleCaseClick(currentCase)}
+                  onNewCase={() => navigate('library')}
+                  onDashboard={() => navigate('dashboard')}
+                  onUpdateProfile={handleUpdateProfile}
+                />
+              )}
+
+            </main>
+
+            {/* ── Onboarding Modal ── */}
+            {showOnboarding && (
+              <OnboardingModal onComplete={handleOnboardingComplete} />
+            )}
+
+            {/* ── Mode Select Modal ── */}
+            {showModeSelect && pendingCase && (
+              <ModeSelectModal
+                caseData={pendingCase}
+                onSelect={handleModeSelected}
+                onClose={() => { setShowModeSelect(false); setPendingCase(null); }}
+              />
+            )}
+
+            {/* ── Settings Drawer ── */}
+            {showSettings && (
+              <SettingsPanel
+                settings={settings}
+                onChange={handleSettingChange}
+                onClose={closeSettings}
+                onLogout={handleLogout}
+              />
+            )}
+
+            {/* ── Loading overlay saat LLM-judge /evaluate (C3 v0.7.3) ──
+                 Aditif: pakai Overlay + LoadingDots existing, token CSS
+                 existing. Tidak mengubah markup komponen / design.css. */}
+            {evaluating && (
+              <>
+                <Overlay />
+                <div style={{
+                  position: 'fixed', inset: 0, zIndex: 1000,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  pointerEvents: 'none',
+                }}>
+                  <div style={{
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 16, padding: '24px 28px', textAlign: 'center',
+                    boxShadow: 'var(--sh-md, 0 8px 30px rgba(0,0,0,0.12))',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+                  }}>
+                    <LoadingDots />
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+                      Menilai sesi anamnesis…
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', maxWidth: 240, lineHeight: 1.5 }}>
+                      Penilai AI sedang membandingkan jawaban dengan rubrik klinis. Mohon tunggu sebentar.
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
+        </ToastProvider>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

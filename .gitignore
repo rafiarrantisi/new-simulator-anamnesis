@@ -1,0 +1,36 @@
+# ── SECRETS — JANGAN PERNAH commit ──
+.env
+**/.env
+*.key
+*.pem
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+**/.pytest_cache/
+
+# Database (dev sqlite)
+*.db
+*.sqlite3
+
+# Node / Vite
+node_modules/
+**/node_modules/
+sistemnya/dist/
+dist/
+
+# Build artifact (di-generate bundler dari sumber)
+sistemnya/src/
+
+# Generated voice samples (bukan sumber)
+backend/tts-samples/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Tetap di-commit (template, BUKAN secret): .env.example, alembic/versions/*

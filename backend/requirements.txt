@@ -1,0 +1,34 @@
+# ── Runtime inti (cukup untuk skeleton Fase 2, ringan, tanpa GPU) ──
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+pydantic-settings>=2.4
+email-validator>=2.1
+pyjwt>=2.9
+bcrypt>=4.1
+python-multipart>=0.0.9
+httpx>=0.27
+
+# ── Test ──
+pytest>=8.0
+
+# ── DB prod (kontrak §7: PostgreSQL) ──
+psycopg2-binary>=2.9
+alembic>=1.13
+
+# ── RAG retrieval ringan (Fase 3, tanpa infra) ──
+rank-bm25>=0.2
+
+# ── LLM provider ──
+# OpenRouter & OpenAI memakai SDK `openai` (OpenRouter = OpenAI-compatible).
+openai>=1.40
+# anthropic>=0.34   # uncomment jika LLM_PROVIDER=anthropic
+
+# ── Embedding dense / vektor (Fase 3 lanjut — berat, install saat infra) ──
+# qdrant-client>=1.11
+# sentence-transformers>=3.0
+# torch  (sesuaikan dengan CUDA/CPU build)
+
+# ── Async jobs & cache (Fase 2 lanjut) ──
+# redis>=5.0
+# celery>=5.4

@@ -1,0 +1,42 @@
+# Stack prod-ish (kontrak §7 / backend-plan §9). Dev lokal bisa tanpa ini
+# (sqlite + --no-embed). Aktifkan saat butuh Postgres/Qdrant/Redis nyata.
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ophtha:ophtha@postgres:5432/ophtha
+      QDRANT_URL: http://qdrant:6333
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    depends_on:
+      - postgres
+      - qdrant
+      - redis
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ophtha
+      POSTGRES_PASSWORD: ophtha
+      POSTGRES_DB: ophtha
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrantdata:/qdrant/storage
+    ports:
+      - "6333:6333"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
+  qdrantdata:

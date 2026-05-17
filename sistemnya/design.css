@@ -1,0 +1,222 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
+/* ===== DESIGN TOKENS ===== */
+:root {
+  --bg: #F5F7FF;
+  --surface: #FFFFFF;
+  --surface-2: #F0F3FF;
+  --surface-3: #E8ECFF;
+  --border: #E4E9FF;
+  --border-2: #CDD4F0;
+
+  --text-1: #1A1D2E;
+  --text-2: #6B7492;
+  --text-3: #9EA8C8;
+
+  --primary: #5865F2;
+  --primary-h: #4752DA;
+  --primary-l: #EEF0FE;
+  --primary-ll: #F5F6FF;
+  --primary-glow: rgba(88,101,242,0.18);
+
+  --teal: #14B8A6;
+  --teal-l: #CCFBF1;
+  --teal-d: #0D9488;
+
+  --amber: #F59E0B;
+  --amber-l: #FEF3C7;
+  --amber-d: #D97706;
+
+  --red: #EF4444;
+  --red-l: #FEE2E2;
+  --red-d: #DC2626;
+
+  --green: #10B981;
+  --green-l: #D1FAE5;
+
+  --gold: #F59E0B;
+  --gold-l: #FEF9C3;
+  --violet: #8B5CF6;
+  --violet-l: #EDE9FE;
+  --sky: #38BDF8;
+  --sky-l: #E0F2FE;
+  --mint: #34D399;
+  --mint-l: #D1FAE5;
+  --rose: #FB7185;
+  --rose-l: #FFE4E6;
+
+  --sh-xs: 0 1px 2px rgba(88,101,242,0.05);
+  --sh-sm: 0 2px 8px rgba(88,101,242,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --sh-md: 0 4px 16px rgba(88,101,242,0.10), 0 2px 6px rgba(0,0,0,0.05);
+  --sh-lg: 0 8px 32px rgba(88,101,242,0.14), 0 4px 8px rgba(0,0,0,0.06);
+  --sh-xl: 0 16px 48px rgba(88,101,242,0.18), 0 8px 16px rgba(0,0,0,0.08);
+  --sh-hover: 0 20px 60px rgba(88,101,242,0.22), 0 8px 20px rgba(0,0,0,0.1);
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-2xl: 24px;
+  --r-3xl: 32px;
+  --r-full: 9999px;
+
+  --ease-in:    cubic-bezier(0.16, 1.15, 0.3, 1);
+  --ease-hover: cubic-bezier(0.2, 1, 0.22, 1);
+  --ease-pop:   cubic-bezier(0.14, 1.35, 0.28, 1);
+  --ease-panel: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ===== BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Poppins', sans-serif;
+  background: var(--bg);
+  color: var(--text-1);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  font-size: 14px;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(88,101,242,0.065) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+}
+#root { position: relative; z-index: 1; min-height: 100vh; }
+button { font-family: 'Poppins', sans-serif; cursor: pointer; border: none; background: none; }
+input, textarea { font-family: 'Poppins', sans-serif; }
+a { text-decoration: none; color: inherit; }
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: var(--r-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ===== KEYFRAMES ===== */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleIn  {
+  from { opacity: 0; transform: scale(0.93); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes bounceIn {
+  0%   { opacity: 0; transform: scale(0.55); }
+  60%  { transform: scale(1.08); }
+  80%  { transform: scale(0.97); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes irisBreath {
+  0%, 100% { transform: scale(1);    opacity: 0.9; }
+  50%       { transform: scale(1.07); opacity: 1; }
+}
+@keyframes pupilPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.12); }
+}
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+@keyframes toastSlide {
+  from { opacity: 0; transform: translateX(120%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateX(0) scale(1); }
+  to   { opacity: 0; transform: translateX(120%) scale(0.9); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(1.05); opacity: 0.8; }
+}
+@keyframes drawerIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes floatUp {
+  0%   { opacity: 1; transform: translateY(0)     scale(1); }
+  100% { opacity: 0; transform: translateY(-36px) scale(0.7); }
+}
+@keyframes barFill {
+  from { width: 0; }
+  to   { width: var(--bar-w, 0%); }
+}
+@keyframes ringFill {
+  from { stroke-dashoffset: var(--ring-total, 283); }
+  to   { stroke-dashoffset: var(--ring-offset, 0); }
+}
+@keyframes badgePop {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-12deg); }
+  50%  { transform: scale(1.15) rotate(4deg); }
+  75%  { transform: scale(0.95) rotate(-2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== ANIMATION UTILITY ===== */
+/* No opacity:0 on class — elements visible by default, animation adds entrance */
+.au  { animation: fadeUp     0.45s var(--ease-in)  both; }
+.af  { animation: fadeIn     0.35s ease             both; }
+.as  { animation: scaleIn    0.4s  var(--ease-in)  both; }
+.ab  { animation: bounceIn   0.6s  var(--ease-pop) both; }
+.ar  { animation: slideRight 0.4s  var(--ease-in)  both; }
+.al  { animation: slideLeft  0.4s  var(--ease-in)  both; }
+
+/* Guarantee visibility when animation can't run */
+@media (prefers-reduced-motion: reduce) {
+  .au,.af,.as,.ab,.ar,.al { animation: none !important; opacity: 1 !important; transform: none !important; }
+}
+
+.d0 { animation-delay: 0s; }
+.d1 { animation-delay: 0.05s; }
+.d2 { animation-delay: 0.10s; }
+.d3 { animation-delay: 0.15s; }
+.d4 { animation-delay: 0.20s; }
+.d5 { animation-delay: 0.27s; }
+.d6 { animation-delay: 0.34s; }
+.d7 { animation-delay: 0.42s; }
+.d8 { animation-delay: 0.50s; }
+
+/* ===== SKELETON ===== */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--r-md);
+}
+
+/* ===== GLOBAL HELPERS ===== */
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.no-select { user-select: none; -webkit-user-select: none; }
