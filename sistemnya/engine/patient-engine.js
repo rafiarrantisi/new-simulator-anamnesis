@@ -17,7 +17,12 @@ var StaticPatientEngine = {
 
     // --- identik dengan kode lama di simulator.jsx ---
     var category = detectCategory(userMessage);
-    var responseData = caseContext.responses[category] || caseContext.responses['default'];
+    // Guard: kasus RAG-adapted tak punya `responses` (case-adapter netral).
+    // Tanpa guard ini, fallback ke Static pada kasus RAG → TypeError →
+    // bubble pasien kosong (bug v0.11.0). Aman: default netral.
+    var responses = caseContext && caseContext.responses;
+    var responseData = (responses && (responses[category] || responses['default']))
+      || { text: '(Maaf, jawaban pasien tidak tersedia untuk kasus ini.)', found: null, isRedFlag: false };
     // -------------------------------------------------
 
     return Promise.resolve({
@@ -56,20 +61,35 @@ function _ragCaseId(input) {
   return /^kasus-\d+/.test(id) ? id : null; // RAG-capable hanya kasus-XX
 }
 
+async function _ragNewGuest() {
+  // C1 dev bridge: buat tamu baru (signup() menyimpan auth via saveAuth).
+  // Domain valid (backend EmailStr menolak TLD special-use .local/.test).
+  var rnd = Math.random().toString(36).slice(2, 10);
+  return window.ApiDataStore.signup({
+    email: 'guest_' + Date.now() + '_' + rnd + '@ophtha-guest.com',
+    password: 'guest-' + rnd,
+    full_name: 'Tamu',
+  });
+}
+
 async function _ragAuthHeader() {
-  var store = window.ApiDataStore;
-  var auth = await store.loadAuth();
-  if (!auth || !auth.token) {
-    // C1 dev bridge: buat tamu otomatis (C2 = LoginScreen nyata).
-    var rnd = Math.random().toString(36).slice(2, 10);
-    // Domain valid (backend EmailStr menolak TLD special-use .local/.test).
-    auth = await store.signup({
-      email: 'guest_' + Date.now() + '_' + rnd + '@ophtha-guest.com',
-      password: 'guest-' + rnd,
-      full_name: 'Tamu',
-    });
-  }
+  var auth = await window.ApiDataStore.loadAuth();
+  if (!auth || !auth.token) auth = await _ragNewGuest();
   return 'Bearer ' + auth.token;
+}
+
+// Hasil graceful saat RAG gagal total — JANGAN pakai StaticPatientEngine
+// untuk kasus RAG (tak punya `responses` → crash → bubble kosong).
+function _ragErrorResult() {
+  var msg = '(Maaf, sambungan ke pasien terputus sebentar. Coba kirim '
+    + 'pertanyaan lagi ya, Dok.)';
+  return {
+    category: 'default',
+    responseData: { text: msg, found: null, isRedFlag: false },
+    reply: msg,
+    detectedDomain: null,
+    audioUrl: null,
+  };
 }
 
 async function _ragFetch(path, method, body) {
@@ -96,33 +116,44 @@ async function _ragSession(caseId, mode) {
 var RagPatientEngine = {
   respond: async function (input, opts) {
     var caseId = _ragCaseId(input);
-    // Tak RAG-capable / backend tak dikonfigurasi → perilaku lama persis.
+    // Bukan RAG-capable / backend tak dikonfigurasi → kasus legacy yang
+    // PUNYA `responses` → Static aman.
     if (!caseId || !_ragApiBase() || !window.ApiDataStore) {
       return StaticPatientEngine.respond(input);
     }
-    try {
+    async function attempt() {
       var sid = await _ragSession(caseId, input.mode);
-      var d = await _ragFetch('/api/sessions/' + sid + '/turns', 'POST', {
+      return _ragFetch('/api/sessions/' + sid + '/turns', 'POST', {
         text: input.userMessage,
       });
-      var reply = (d && d.reply) || '';
-      if (opts && typeof opts.onChunk === 'function') opts.onChunk(reply);
-      // Bentuk kompatibel simulator.jsx lama. category 'default' → tidak
-      // mengubah skor/findings live; scoring RAG = post-session Evaluator
-      // (kontrak §3A). Panel findings memang kosong di mode RAG = batas
-      // C1 terdokumentasi; UX scoring penuh = C3.
-      return {
-        category: 'default',
-        responseData: { text: reply, found: null, isRedFlag: false },
-        reply: reply,
-        detectedDomain: null,
-        audioUrl: (d && d.audioUrl) || null,
-      };
-    } catch (e) {
-      // Resiliensi C1: backend gagal → jangan biarkan giliran menggantung
-      // (simulator.jsx belum punya error-UX; itu C2). Fallback Static.
-      return StaticPatientEngine.respond(input);
     }
+    var d;
+    try {
+      d = await attempt();
+    } catch (e1) {
+      // FIX v0.11.0: token akses kadaluarsa (TTL 15 mnt, tanpa refresh di
+      // C1) atau sesi milik auth mati (404) → bubble pasien kosong.
+      // Tamu baru + sesi baru + ULANG SEKALI.
+      try {
+        await _ragNewGuest();
+        delete _ragSessionByCase[caseId];
+        d = await attempt();
+      } catch (e2) {
+        return _ragErrorResult(); // graceful — BUKAN Static (crash di RAG)
+      }
+    }
+    var reply = (d && d.reply) || '';
+    if (!reply) return _ragErrorResult();
+    if (opts && typeof opts.onChunk === 'function') opts.onChunk(reply);
+    // Bentuk kompatibel simulator.jsx lama. Scoring RAG = post-session
+    // Evaluator (kontrak §3A).
+    return {
+      category: 'default',
+      responseData: { text: reply, found: null, isRedFlag: false },
+      reply: reply,
+      detectedDomain: null,
+      audioUrl: (d && d.audioUrl) || null,
+    };
   },
 };
 

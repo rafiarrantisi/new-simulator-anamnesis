@@ -40,6 +40,7 @@ def init_db() -> None:
     # (users domain pakai model dari auth — tidak punya models.py sendiri)
     from app.domains.auth import models as _auth  # noqa: F401
     from app.domains.cases import models as _cases  # noqa: F401
+    from app.domains.exam import models as _exam  # noqa: F401
     from app.domains.sessions import models as _sessions  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

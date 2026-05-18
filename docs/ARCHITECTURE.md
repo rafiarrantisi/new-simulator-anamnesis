@@ -1,9 +1,12 @@
 # OphthaSim — Architecture & Contract (Single Source of Truth)
 
 > **STATUS:** Fase 1–2 selesai · Fase 3 berjalan (RAG core OK, LLM nyata
-> aktif) · cutover frontend bertahap (C1). Dokumen ini **sumber kebenaran
-> tunggal** yang menjembatani semua chat session.
-> Versi: `0.9.0` · Terakhir diubah: 2026-05-16
+> aktif) · cutover frontend bertahap (C1) · **Exam Simulator DICABUT dari
+> flow (v0.11.0, keputusan user)** — file disimpan dorman, tak di-wire.
+> **Flow kanonik: Anamnesis → DDx → Rencana Tatalaksana → Debrief (narasi
+> LLM).** Dokumen ini **sumber kebenaran tunggal** yang
+> menjembatani semua chat session.
+> Versi: `0.12.0` · Terakhir diubah: 2026-05-17
 
 ---
 
@@ -125,6 +128,8 @@ interface EvaluationInput {
   sessionId: string;
   transcript: Message[];
   mode: 'normal' | 'tutorial' | 'osce';
+  ddx?: { dx1?; dx2?; dx3?; reasoning?; skipped? } | null;   // v0.12.0 (opsional)
+  managementPlan?: { penunjang?; terapi?; edukasi?; skipped? } | null; // v0.12.0
 }
 
 interface EvaluationReport {        // bentuk persis = rag-plan §8.3
@@ -137,6 +142,9 @@ interface EvaluationReport {        // bentuk persis = rag-plan §8.3
   };
   missedItems: string[];
   positiveNotes: string[];
+  summary?: string;                // v0.12.0 (opsional, aditif): narasi
+                                   // LLM ringkas (apa dilakukan, bagus,
+                                   // kurang) — dirender di Debrief.
 }
 
 interface Evaluator {
@@ -151,6 +159,108 @@ interface Evaluator {
   `totalScore` agar gamifikasi UI tetap jalan.
 - Bobot lama frontend (55/30/15 dan 20/35/20/15/10) **superseded** oleh
   rubrik 40/20/20/20 di atas.
+
+---
+
+## 3B. KONTRAK — Modul Exam Simulator (KEPUTUSAN v0.10.0)
+
+> Rekonsiliasi `docs/all-plan/ophtha-exam-simulator-unified-plan.md` (v1.0)
+> ke kontrak ini. Plan = detail teknis & pedagogis; **dokumen ini yang
+> berlaku** bila konflik. Alur sesi **tidak berubah**:
+> `ANAMNESIS → DDx COMMIT → OCULAR EXAM → DEBRIEF` (plan §1.1).
+
+### 3B.1 Posisi & seam
+
+Exam = tahap **post-anamnesis, pre-debrief**. UI hanya bicara ke seam
+`ExamEngine` (analog `PatientEngine` §3) — tidak pernah langsung ke
+ground-truth findings atau `fetch`.
+
+```ts
+interface ExamEngine {
+  // ground truth TIDAK pernah dibaca langsung UI (anti-cheat by inspection,
+  // plan §6.1/§7.2). Hanya backend yang menilai.
+  loadFindings(sessionId: string): Promise<ExamFindingsView>; // session-gated
+  submit(record: StudentExamRecord): Promise<ExamScoringReport>;
+}
+```
+
+- `StaticExamEngine` (legacy/dev/offline): bungkus station legacy yang
+  SUDAH ADA (`ocular-exam.jsx` + `exam-*.jsx` + `stations/station-*-v3.jsx`)
+  + `EXAM_EXTENSIONS` (`exam-data.js`). Output perilaku identik. Fallback
+  saat `OPHTHA_API_BASE` kosong.
+- `ApiExamEngine` (E-cutover): panggil endpoint §6 (session-gated). Selector
+  sama pola C1: `window.OPHTHA_API_BASE` ada → API; else Static.
+- Engine TIDAK menghitung skor. Itu backend (`POST .../exam` → scorer).
+
+### 3B.2 Scoring TERPISAH dari Evaluator §3A
+
+`ExamScoringReport` adalah laporan **tersendiri**, BUKAN dilebur ke
+`EvaluationReport` §3A (cegah contract drift rubrik anamnesis kanonik
+40/20/20/20). Komposisi skor sesi total (anamnesis + DDx + exam) =
+**keputusan tertunda** (§9 K7), tidak diputuskan di v0.10.0.
+
+```ts
+interface StudentExamRecord {
+  sessionId: string; caseId: string;
+  stations: Record<string, {                 // stationId → catatan mahasiswa
+    recorded: unknown;                        // temuan yang dicatat
+    procedureSteps: string[];                 // urutan tindakan (adherence)
+    completed: boolean;
+  }>;
+}
+
+interface ExamScoringReport {
+  examTotalScore: number;                     // 0..100
+  stations: Record<string, {
+    score: number; max: number; detail: unknown[];
+  }>;
+  missedFindings: string[];
+  procedureNotes: string[];                   // adherence (plan §7.3)
+  positiveNotes: string[];
+}
+```
+
+Bobot per-station (plan §7.3, dinormalisasi → total 100):
+`visual_acuity 15 · pupils_rapd 15 · ocular_motility 10 · visual_field 10
+· slit_lamp 20 · tonometry 10 · fundoscopy 20`. Amsler/Ishihara/
+fluorescein = kondisional/bonus. **Penilaian = temuan + adherence
+prosedur** (urutan benar, mis. VA OD→OS, RAPD ruang gelap).
+
+### 3B.3 Frontend stack — PENGECUALIAN BER-SCOPE (diizinkan user)
+
+> **KEPUTUSAN v0.10.0 (user, eksplisit):** Modul exam-simulator butuh
+> "mendekati alat aslinya, tanpa tradeoff" → **diizinkan memakai stack
+> frontend maksimal**. Pengecualian ini **HANYA** untuk modul exam-sim.
+> Sisa aplikasi tetap tunduk §8.1 (byte-identical) tanpa kecuali.
+
+Stack exam-sim (adopsi plan §2, divalidasi): React 18 + **TypeScript** +
+Vite + **Zustand** (store per-station, ter-reset antar station — isolasi
+ala RAG) + **Framer Motion + SVG** (L2) + **Pixi.js v8 `@pixi/react`**
+(L3, lazy) + **React Three Fiber + GLSL** (L4 slit-lamp, lazy) + **GSAP
+`@gsap/react`** (timing RAPD) + Tailwind **scoped**. Fallback WebGL→L2
+(plan §3.3). Pixi v8 (plan Keputusan 3). Ishihara = procedural SVG
+(IP-safe, plan Keputusan 2).
+
+### 3B.4 Invarian ISOLASI (WAJIB — pelindung §8.1)
+
+Pengecualian §3B.3 sah HANYA jika SEMUA invarian ini dipenuhi &
+diverifikasi tiap perubahan:
+
+1. **Paket terpisah** `sistemnya/exam-sim/` — `package.json`, Vite, TS,
+   build sendiri. Dependensi berat (pixi/three/r3f/tailwind/framer/gsap)
+   **TIDAK PERNAH** masuk `package.json` legacy, `build/bundle-legacy.mjs`
+   `LOAD_ORDER`, `src/main.jsx`, atau `design.css`.
+2. **CSS tak bocor 2 arah**: exam-sim di-mount dalam **Shadow DOM root**
+   (Tailwind preflight + style ter-scope di shadow). `design.css` tak
+   masuk; style exam-sim tak keluar.
+3. **Invarian hash main app**: `npm run build` di `sistemnya/` tetap
+   menghasilkan `index-Bj97HpXF.css` (byte-identical §8.1). Diverifikasi
+   tiap sesi yang menyentuh FE.
+4. **Integrasi via seam + flag**: legacy `ocular-exam.jsx` flow tetap;
+   delegasi render ke exam-sim hanya saat flag aktif (pola selector C1).
+   Markup/`design.css` legacy tetap byte-identical (seam, bukan rombak).
+5. **Alur tak berubah**: ANAMNESIS→DDx→EXAM→DEBRIEF; exam-sim mengisi
+   slot EXAM, tidak mengubah screen lain.
 
 ---
 
@@ -216,7 +326,11 @@ Hanya dipakai `StaticPatientEngine`/`StaticEvaluator` untuk dev/offline.
 
 ### 5.4 `Profile`
 `{ xp, streak, completedCaseIds[], totalSessions, name, school, year,
-   avatarEmoji, avatarColor, favoriteCaseIds[], sessionDates{}, dailyCompleted{} }`
+   avatarEmoji, avatarColor, favoriteCaseIds[], sessionDates{}, dailyCompleted{},
+   scoreHistory[] }`
+> `scoreHistory` (v0.11.0, aditif): `[{ ts, caseId, score }]` (cap ~200,
+> terbaru dulu) — sumber rata-rata nilai (Profil) & Skill Heatmap nyata.
+> Opsional/back-compat (default `[]` bila absen).
 
 ### 5.5 Scoring (KEPUTUSAN v0.3.0)
 Kanonik = `Evaluator` LLM-judge post-session (§3A). `computeScore`/
@@ -262,6 +376,46 @@ ditanya lalu BERHENTI; first-turn tidak boleh lapor keluhan saat hanya
 disapa; hidden clue hanya muncul jika digali (prompt-plan §3–§6). Bukan
 fitur tambahan — ini syarat kelulusan Fase 3 (QA prompt-plan §10).
 
+### 5.9 `ExamFindings` (KEPUTUSAN v0.10.0 — sidecar, draf → dokter)
+
+Ground-truth pemeriksaan fisik per kasus (plan §4). **Sumber kanonik =
+`## BAGIAN A` → `### 5. Temuan Klinis Objektif`** di markdown (terverifikasi
+ada & terstruktur, mis. kasus-02: tabel VA/TIO/pupil/motilitas/lapang +
+tabel slit-lamp + fundus).
+
+- **Mekanisme draf = SIDECAR** `data-kasus/_exam/kasus-XX.json` — cermin
+  presiden §5.7 `_disclosure/`. **TIDAK** meng-edit 22 .md kanonik (jaga
+  byte-identical + disiplin sign-off dokter). Loader baca sidecar; bila
+  tak ada → **default aman** (semua "normal/tidak diperiksa") supaya
+  endpoint tak 500. Setelah dokter validasi, boleh di-merge ke Bagian A.
+- **Konten = draf asisten; dokter mata VALIDASI** (sama disiplin §5.7;
+  jangan klaim tervalidasi).
+- **Schema pragmatis** (bukan 200-baris TS plan §4.1 penuh — YAGNI;
+  granularitas mengikuti yang markdown benar-benar sediakan):
+
+```
+ExamFindings {
+  caseId, affectedEye?: 'OD'|'OS'|'OU',
+  visual_acuity?: { od, os, pinhole_od?, pinhole_os?, near_od?, near_os? },
+  tonometry?:     { iop_od?, iop_os?, method? },
+  pupils?:        { od_size?, os_size?, od_react?, os_react?, rapd?, notes? },
+  motility?:      { full?: bool, restrictions?: [], notes? },
+  visual_field?:  { od?, os?, defect_pattern?, notes? },
+  slit_lamp?:     { lids?, conjunctiva?, cornea?, anterior_chamber?,
+                    iris?, lens?, notes? },
+  fundus?:        { disc_od?, disc_os?, cdr_od?, cdr_os?, macula_od?,
+                    macula_os?, vessels?, periphery?, image_od?, image_os? },
+  color_vision?:  { od_correct?, os_correct?, total?, type? },
+  amsler?:        { od?, os? },
+  fluorescein?:   { pattern?, location?, seidel?, note? }
+}
+```
+Field opsional + tipe fleksibel (string/struktur) — draf dari markdown
+tak boleh over-constrained, tetap tervalidasi schema (Pydantic).
+- **Anti-bocor**: hanya backend baca `_exam/`. Ke client lewat endpoint
+  **session-gated** (§6); progressive-disclosure per-station (plan §4.3)
+  = increment terjadwal, bukan dump sekaligus.
+
 ---
 
 ## 6. KONTRAK — Backend API (Fase 2; penamaan disatukan)
@@ -288,6 +442,9 @@ Semua skema multi-tenant: `institution_id` ada di schema sejak hari 1.
 | POST | `/api/ai/transcribe` | STT (audio→teks, Whisper) — Fase 4 |
 | POST | `/api/ai/tts` | TTS (teks→audio) — Fase 4 |
 | POST | `/api/scoring/evaluate` | **LLM-judge** → `EvaluationReport` (§3A) |
+| GET | `/api/sessions/{id}/exam-findings` | **Exam** ground truth, **session-gated** (auth+owner+aktif) → `ExamFindings` §5.9 |
+| POST | `/api/sessions/{id}/exam` | Submit `StudentExamRecord` §3B.2 → skor deterministik |
+| GET | `/api/sessions/{id}/exam-report` | `ExamScoringReport` §3B.2 (setelah submit) |
 | GET | `/api/analytics/*` | Fase 2+ (dashboard dosen) |
 
 **Protokol WebSocket `/api/sessions/{id}/ws`:**
@@ -324,6 +481,12 @@ Urutan 0→1→2→3→4 (dependensi keras). Polish UI **non-blocking**, diselip
    `data.js`/`cases-extra.js`) = **dummy dev, BUKAN konten dilindungi**.
    Yang dilindungi = *design/markup*. Dummy boleh dipensiun/diganti
    `kasus-XX` saat C3 tanpa melanggar poin ini.
+   **KLARIFIKASI v0.10.0 (user):** stack FE legacy = bertahap (mungkin
+   di-upgrade kelak saat publish). Modul **exam-simulator** diizinkan
+   **pengecualian ber-scope** memakai stack maksimal — lihat §3B.3 —
+   **HANYA** jika invarian isolasi §3B.4 dipenuhi (paket terpisah, shadow
+   DOM, hash `index-Bj97HpXF.css` main app tetap, seam+flag, alur tetap).
+   Pengecualian TIDAK meluas ke surface lain; sisa app tetap byte-identical.
 2. Editing file sumber hanya pada *seam logic* yang dijadwalkan resmi di
    Changelog. **Evolusi konten kasus** (markdown jadi kanonik, frontend
    cutover ke `CaseSummary`, pensiun hardcoded EN) **resmi dijadwalkan Fase 3**
@@ -345,11 +508,120 @@ Default dipakai sampai diputuskan lain (backend-plan §11):
 | K2 | LLM persona & evaluator | Abstraksi provider-agnostic; persona = Claude/GPT-4o, evaluator = model kecil. Pilih konkret Fase 3 |
 | K3 | Multi-tenant | **YA** — `institution_id` sejak hari 1 (cheap, painful jika telat) |
 | K4 | Real-time instructor monitoring | Tidak dulu — post-session dashboard; WS pub/sub bila perlu |
+| K5 | ExamFindings extraction | Default: sidecar `_exam/` draf manual asisten + review dokter. LLM-assisted extraction (plan §4.2) = tooling admin terjadwal |
+| K6 | Exam-sim FE↔backend cutover | `ApiExamEngine` seam siap; cutover bertahap (pola C1) + verifikasi browser, **ditunda** sampai station inti jalan |
+| K7 | Komposisi skor sesi total (anamnesis+DDx+exam) | **Belum diputuskan.** `ExamScoringReport` tetap terpisah dari `EvaluationReport` §3A sampai diputuskan (plan §1.1 usul 40/20/40 — perlu gate dokter) |
 
 ---
 
 ## 10. Changelog kontrak
 
+- `0.12.0` (2026-05-17): **Debrief narasi LLM + skor menilai DDx & Rencana
+  Tatalaksana; perbaikan bug pasien-kosong; Skill Heatmap & rata-rata
+  nilai profil.** **(a) Bug-fix pasien tak menjawab:** akar = token akses
+  kadaluarsa (TTL 15 mnt, tanpa refresh di C1) → `/api/sessions` 401 →
+  RagPatientEngine fallback ke StaticPatientEngine yang **crash** di kasus
+  RAG (`responses` undefined) → bubble kosong; **+** LLM sesekali balas
+  `content` kosong → reply "". Fix: `patient-engine.js` re-auth tamu +
+  **retry sekali** pada gagal, **buang fallback Static utk RAG** → pesan
+  graceful (bukan crash/empty), guard Static; `llm.py` fallback
+  `reasoning`/`reasoning_content` + treat konten kosong sbg transient
+  (di-retry `_with_retry`). pytest 56 hijau. **(b) §3A diperluas
+  (aditif/opsional, back-compat):** `EvaluationInput += ddx,
+  managementPlan`; `EvaluationReport += summary` (narasi LLM ringkas).
+  `/api/scoring/evaluate` terima `ddx`/`management_plan`; evaluator
+  menyertakannya ke prompt judge + hasilkan `summary` (apa dilakukan,
+  bagus, kurang). **(c) DebriefScreen** tampilkan narasi LLM (summary +
+  positiveNotes + missedItems) — komponen/token design existing, **zero
+  design.css baru** (invarian §8.1 tetap; CSS hash `index-Bj97HpXF.css`).
+  **(d) Skill Heatmap** (dashboard) diperjelas (angka + bar + label
+  kualitatif) dari data nyata; **Profil rata-rata nilai** via
+  `scoreHistory` §5.4 (persist localStorage). Implementasi
+  bertahap-terverifikasi (debrief → heatmap/profil); status di HANDOFF.
+- `0.11.0` (2026-05-17): **PIVOT (keputusan user): Exam Simulator DICABUT
+  dari flow.** Setelah ditinjau user, exam-sim dinilai tak sesuai
+  (design/UX) & tak diperlukan di alur anamnesis. **(a)** K6 (v0.10.1)
+  di-revert penuh: 4 edit inline App + `engine/exam-engine.js` dari
+  `LOAD_ORDER` dikembalikan → `Virtual Patient Simulator.html` &
+  `bundle-legacy.mjs` **byte-identical original** (terverifikasi git diff
+  kosong + CSS hash `index-Bj97HpXF.css`). File **disimpan dorman** (tak
+  dihapus): `sistemnya/exam-sim/`, backend domain `exam`, sidecar
+  `data-kasus/_exam/`, `engine/exam-engine.js` — TIDAK di-bundle/di-wire.
+  Kontrak §3B/§5.9/§6 exam & E1 tetap tercatat sbg historis tapi
+  **flow-nya superseded**. **(b) Flow kanonik baru:** `Anamnesis → DDx →
+  **Rencana Tatalaksana** → Debrief`. Step **Rencana Tatalaksana** (baru,
+  `learning-extras.jsx`, design **identik** DDxCommitScreen — token CSS
+  var existing, komponen `Btn/Card`, **tanpa design.css baru**): mahasiswa
+  rekomendasi **pemeriksaan penunjang** + **terapi/obat**; tersimpan di
+  `session.managementPlan`. **(c) Debrief = narasi LLM:** surface
+  `EvaluationReport` (§3A) `missedItems`/`positiveNotes` + penjelasan
+  (apa yg dilakukan, kurang/bagus) di DebriefScreen pakai design existing;
+  managementPlan disertakan ke evaluasi LLM. **(d) Skill Heatmap**
+  (dashboard) diperjelas (angka + bar + label kualitatif), data nyata.
+  **(e) Profil:** rata-rata nilai (butuh persist skor-history di Profile
+  §5.4 — field baru `scoreHistory[]`). **WAJIB design SAMA PERSIS**
+  landing/dashboard/cases (token+komponen existing; zero design.css baru —
+  invarian §8.1 tetap). Implementasi bertahap-terverifikasi; status di
+  HANDOFF. **Catatan §5.4:** Profile + `scoreHistory:[{ts,caseId,score}]`
+  (aditif, opsional, localStorage + backend bila ada).
+- `0.10.1` (2026-05-17): **K6 dieksekusi — exam-sim masuk alur legacy
+  (seam aditif).** Bukan keputusan kontrak baru; implementasi §9 K6 yg
+  sudah dijadwalkan. **Perubahan perilaku:** kasus RAG yang dulu
+  *auto-skip exam* (Changelog 0.7.0) kini, bila `window.OphthaExam`
+  tersedia, route ke screen baru `examsim` → mount exam-sim terisolasi
+  (Shadow DOM) → `onExit` jalankan skor RAG + debrief (urutan lama
+  dipertahankan, di-ekstrak `ragScoreThenDebrief`). 4 edit aditif inline
+  App (pola C1 terjadwal): `examHostRef`+callback, effect mount/unmount,
+  routing `{screen==='examsim'}` (inline-style, **tanpa class
+  design.css**), `isExamSim`→`hideHeader`. **Fallback-safe:** OphthaExam
+  absen / mount gagal / tak ada RAG session → `ragScoreThenDebrief()`
+  (perilaku lama persis, tak dead-end). **Diverifikasi asisten:** main
+  app build hijau + **CSS hash TETAP `index-Bj97HpXF.css`** (§8.1/§3B.4
+  utuh; `design.css`/markup screen lain byte-identical) + exam-sim build
+  + pytest 56. **WAJIB diverifikasi user (tak bisa asisten):** (a)
+  runtime browser flow ANAMNESIS→DDx→**EXAM(exam-sim)**→DEBRIEF dgn
+  backend hidup; (b) **deployment**: `dist/exam-sim/` (hasil build
+  `sistemnya/exam-sim`) harus terlayani di `<app>/exam-sim/exam-sim.js`
+  atau set `window.OPHTHA_EXAM_BUNDLE` — dynamic import path environmental,
+  bukan bug kode.
+- `0.10.0` (2026-05-17): **Modul Exam Simulator — kontrak ditetapkan (E1).**
+  Rekonsiliasi `all-plan/ophtha-exam-simulator-unified-plan.md` v1.0.
+  (a) **§3B** seam `ExamEngine` (Static legacy/dev vs Api; selector pola
+  C1) — alur ANAMNESIS→DDx→EXAM→DEBRIEF tak berubah. (b) **Scoring exam
+  TERPISAH** dari Evaluator §3A (`ExamScoringReport`; bobot per-station
+  plan §7.3 dinormalisasi 100; nilai = temuan + adherence prosedur).
+  Komposisi sesi total = tertunda (§9 K7). (c) **§3B.3 PENGECUALIAN
+  ber-scope diizinkan user**: exam-sim boleh stack maksimal (React18+TS+
+  Vite+Zustand+FramerMotion/SVG+Pixi.js v8+R3F/GLSL+GSAP+Tailwind scoped;
+  Pixi v8; Ishihara procedural IP-safe). (d) **§3B.4 invarian ISOLASI
+  WAJIB** (pelindung §8.1): paket terpisah `sistemnya/exam-sim/`, deps
+  berat tak masuk bundle legacy, Shadow DOM (CSS tak bocor 2 arah), hash
+  `index-Bj97HpXF.css` main app TETAP, integrasi seam+flag. §8.1 +
+  KLARIFIKASI v0.10.0. (e) **§5.9 `ExamFindings`** = sidecar
+  `data-kasus/_exam/kasus-XX.json` (cermin §5.7 `_disclosure/`; tak edit
+  22 .md kanonik; default aman bila absen; **draf asisten → dokter
+  validasi**); sumber kanonik = Bagian A `### 5`. (f) **§6** +3 endpoint
+  session-gated (`/exam-findings`, `/exam`, `/exam-report`). (g) §9 +K5/
+  K6/K7. **Implementasi v0.10.0 (TUNTAS — sistem lengkap):** backend
+  domain `exam` (schemas/loader/scorer/router) + skor kondisional
+  amsler/ishihara/fluorescein (terpisah dari examTotalScore) + pilot
+  sidecar kasus-02 (draf) + 10 tests (pytest 56 passed). Paket exam-sim
+  terisolasi + **10 station plan §5 SEMUA jadi**: VA, Pupil/RAPD
+  (SVG+Framer+GSAP), Motilitas, Lapang Pandang, Amsler, Ishihara
+  (prosedural IP-safe), Tonometri (Goldmann), Slit-Lamp (skematik L2 **+**
+  volumetrik R3F/GLSL L4 lazy + fallback), Fundoskopi (Pixi L3 lazy),
+  Fluorescein (Pixi L3 lazy). Code-split lazy nyata (Pixi/R3F chunk
+  terpisah, init GPU ditunda). Seam `engine/exam-engine.js` di LOAD_ORDER
+  (pola C1, dormant). **Verified:** exam-sim build hijau; **CSS hash main
+  app TETAP `index-Bj97HpXF.css`** (invarian §8.1/§3B.4 terbukti).
+  **Ditunda eksplisit (terjadwal, bukan utang tersembunyi):** (1) call-site
+  DOM legacy memanggil `window.OphthaExam.mount` = **§9 K6**, di-gate
+  verifikasi browser + butuh slot markup (perubahan area dilindungi →
+  review §8.1). (2) 21 sidecar `_exam` sisa + **validasi dokter** semua
+  konten (§5.9). (3) Asset pipeline foto fundus nyata (plan §8; kini
+  ilustrasi prosedural, dilabel jujur §9.2). (4) Komposisi skor sesi total
+  (§9 K7). (5) Verifikasi browser exam-sim (build-verified saja; butuh
+  backend hidup + sesi + token).
 - `0.9.0` (2026-05-16): **Security/production hardening pass.** Dikerjakan:
   (a) **prod-guard fail-fast** — `ENV in {prod,staging}` + config tak aman
   (JWT secret default/<32B, DATABASE_URL sqlite, CORS `*`, key kosong) →

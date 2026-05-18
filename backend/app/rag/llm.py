@@ -106,7 +106,20 @@ def _openai_compatible(base_url: str | None):
                     raise RuntimeError(
                         f"LLM tanpa choices: {_err(r) or repr(r)[:200]}"
                     )
-                return r.choices[0].message.content or ""
+                msg = r.choices[0].message
+                # Sebagian model (reasoning) menaruh teks di `reasoning`/
+                # `reasoning_content`, content kosong → ambil fallback.
+                content = (
+                    msg.content
+                    or getattr(msg, "reasoning_content", None)
+                    or getattr(msg, "reasoning", None)
+                    or ""
+                )
+                if not str(content).strip():
+                    # Konten kosong = anggap transient → biar _with_retry
+                    # mencoba lagi (kata kunci 'overload' lolos filter).
+                    raise RuntimeError("LLM kembalikan konten kosong (overload?)")
+                return content
 
             return _with_retry(_call)
 

@@ -338,20 +338,71 @@ const DashboardScreen = ({ onNav, onStartCase, profile, badges }) => {
             )}
           </Card>
 
-          {/* Quick stats */}
+          {/* Skill Heatmap — data NYATA dari scoreHistory (kontrak §3A
+              rubrik). Lebih jelas: nilai + label kualitatif + bar tebal. */}
           <div style={{ marginTop: 16 }}>
             <Card padding={18}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 14 }}>Skill Heatmap</div>
-              {[
-                { label: 'History Taking',  value: 82, color: 'var(--primary)' },
-                { label: 'Red Flag Detection', value: 65, color: 'var(--red)' },
-                { label: 'Systematic Coverage', value: 74, color: 'var(--teal)' },
-                { label: 'Clinical Efficiency', value: 58, color: 'var(--amber)' },
-              ].map(s => (
-                <div key={s.label} style={{ marginBottom: 10 }}>
-                  <ProgressBar label={s.label} value={s.value} max={100} color={s.color} height={6} showPct />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Skill Heatmap</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Rata-rata penilaian AI
                 </div>
-              ))}
+              </div>
+              {(() => {
+                const META = {
+                  coverage:      { label: 'Cakupan Anamnesis', color: 'var(--primary)' },
+                  fife:          { label: 'FIFE & Empati',      color: 'var(--violet)' },
+                  redFlags:      { label: 'Deteksi Red Flag',   color: 'var(--red)' },
+                  communication: { label: 'Komunikasi',          color: 'var(--teal)' },
+                };
+                const rows = (typeof skillAverages === 'function' ? skillAverages(profile) : [])
+                  .filter(r => META[r.key]);
+                const hasData = rows.some(r => r.value !== null);
+                if (!hasData) {
+                  return (
+                    <div style={{
+                      textAlign: 'center', padding: '18px 8px',
+                      fontSize: 12, color: 'var(--text-3)', lineHeight: 1.6,
+                    }}>
+                      Selesaikan kasus (dinilai AI) untuk melihat<br />kekuatan &amp; kelemahan skill kamu di sini.
+                    </div>
+                  );
+                }
+                const tag = (v) => v == null ? { t: '—', c: 'var(--text-3)' }
+                  : v >= 80 ? { t: 'Baik',         c: 'var(--green)' }
+                  : v >= 60 ? { t: 'Cukup',        c: 'var(--amber-d)' }
+                  :           { t: 'Perlu latihan', c: 'var(--red)' };
+                return rows.map(r => {
+                  const m = META[r.key];
+                  const v = r.value;
+                  const g = tag(v);
+                  return (
+                    <div key={r.key} style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>{m.label}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 7 }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: v == null ? 'var(--text-3)' : m.color }}>
+                            {v == null ? '—' : v}
+                            {v != null && <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600 }}>/100</span>}
+                          </span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                            background: g.c + '1A', color: g.c,
+                          }}>{g.t}</span>
+                        </span>
+                      </div>
+                      <div style={{ background: 'var(--surface-2)', borderRadius: 999, height: 10, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', borderRadius: 999, width: (v == null ? 0 : v) + '%',
+                          background: `linear-gradient(90deg, ${m.color}, ${m.color}cc)`,
+                          transition: 'width 0.8s var(--ease-panel)',
+                          boxShadow: `0 0 8px ${m.color}40`,
+                        }} />
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </Card>
           </div>
         </div>
@@ -791,6 +842,21 @@ const DebriefScreen = ({ session, caseData, onRetry, onNewCase, onDashboard, pro
     { label: 'Perlu Latihan', color: 'var(--red)', emoji: '💪', letter: 'D' }
   );
 
+  // §5.4 v0.12.0: catat skor sesi sekali (rata-rata profil + Skill Heatmap).
+  const _scoredRef = React.useRef(false);
+  React.useEffect(() => {
+    if (_scoredRef.current || typeof recordScore !== 'function') return;
+    _scoredRef.current = true;
+    try {
+      const rep = session.scoring && session.scoring._report;
+      const next = recordScore(profile, {
+        caseId: caseData.id, score: score,
+        breakdown: rep && rep.breakdown,
+      });
+      if (next !== profile && typeof onUpdateProfile === 'function') onUpdateProfile(next);
+    } catch (e) {}
+  }, []);
+
   const xpGained = session.xpGained || Math.round(score * 1.5);
   const elapsed = session.elapsed || 0;
   const mins = Math.floor(elapsed / 60);
@@ -1011,6 +1077,71 @@ const DebriefScreen = ({ session, caseData, onRetry, onNewCase, onDashboard, pro
           ))}
         </div>
       </Card>
+
+      {/* ───── PENILAIAN AI (narasi LLM-judge, kontrak §3A v0.12.0) ───── */}
+      {session.scoring && session.scoring._report &&
+        (session.scoring._report.summary ||
+         (session.scoring._report.positiveNotes || []).length ||
+         (session.scoring._report.missedItems || []).length) ? (
+        <Card padding={20} style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+            🧠 Penilaian AI
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 14 }}>
+            Umpan balik dari penilai AI atas anamnesis, diagnosis banding &amp; rencana tatalaksana Anda
+          </div>
+
+          {session.scoring._report.summary && (
+            <div style={{
+              fontSize: 13, color: 'var(--text-2)', lineHeight: 1.65,
+              padding: '14px 16px', background: 'var(--primary-ll)',
+              border: '1px solid var(--primary-l)', borderRadius: 12, marginBottom: 16,
+            }}>
+              {session.scoring._report.summary}
+            </div>
+          )}
+
+          {(session.scoring._report.positiveNotes || []).length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                ✓ Sudah Baik
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {session.scoring._report.positiveNotes.map((t, i) => (
+                  <div key={i} style={{
+                    display: 'flex', gap: 9, padding: '9px 12px',
+                    background: 'var(--green-l)', borderRadius: 10,
+                    fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5,
+                  }}>
+                    <span style={{ color: 'var(--green)', flexShrink: 0 }}>✓</span>
+                    <span>{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(session.scoring._report.missedItems || []).length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-d)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                ⚠ Perlu Diperbaiki
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {session.scoring._report.missedItems.map((t, i) => (
+                  <div key={i} style={{
+                    display: 'flex', gap: 9, padding: '9px 12px',
+                    background: 'var(--amber-l)', borderRadius: 10,
+                    fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5,
+                  }}>
+                    <span style={{ color: 'var(--amber-d)', flexShrink: 0 }}>⚠</span>
+                    <span>{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       {/* Exam Diagnosis Result */}
       {examResult && (

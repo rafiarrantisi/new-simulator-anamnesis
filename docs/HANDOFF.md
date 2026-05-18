@@ -14,6 +14,25 @@ sejauh mungkin tanpa manusia/infra**:
   cutover RAG C1–C3 (browser-verified); voice PTT mic + auto-speak.
   Design asli **tidak diubah** (invariant: CSS hash build tetap
   `index-Bj97HpXF.css`).
+- **Exam Simulator DICABUT dari flow (v0.11.0, keputusan user).** File
+  disimpan **dorman, tak di-wire**: `sistemnya/exam-sim/`, backend domain
+  `exam`, `data-kasus/_exam/`, `engine/exam-engine.js` (out of LOAD_ORDER).
+  `Virtual Patient Simulator.html` & `bundle-legacy.mjs` byte-identical
+  original (revert terverifikasi).
+- **Flow kanonik (v0.11.0):** Anamnesis → DDx → **Rencana Tatalaksana**
+  (`ManagementPlanScreen`: penunjang+terapi+edukasi → `session.managementPlan`)
+  → Debrief. Design token/komponen existing (zero design.css baru).
+- **v0.12.0 (selesai, build/pytest-verified):** (a) **Bug pasien-kosong
+  fixed** — `patient-engine.js` re-auth+retry+graceful (token TTL 15mnt
+  habis → 401); `llm.py` robust thd content kosong. (b) **Debrief narasi
+  LLM** — `/api/scoring/evaluate` terima `ddx`/`management_plan`,
+  evaluator hasilkan `summary`; DebriefScreen tampilkan summary+
+  positiveNotes+missedItems. (c) **Skill Heatmap** dashboard = data nyata
+  (rata-rata rubrik dari `scoreHistory`) + lebih jelas. (d) **Profil
+  "Performa Penilaian"** (rata-rata/tertinggi/sparkline) via `scoreHistory`
+  §5.4 (di-record sekali di DebriefScreen). CSS hash tetap
+  `index-Bj97HpXF.css`; pytest 56. **Batas:** runtime browser
+  (narasi/heatmap/avg) butuh verifikasi user.
 - **Backend** (`backend/`): FastAPI domain-modular, JWT, Alembic,
   RAG (BM25 + answer-restraint + LLM-judge), STT Groq, TTS ElevenLabs,
   prod-guard/headers/rate-limit. **46 pytest passed, 1 skipped**.
@@ -39,6 +58,11 @@ docs/         ARCHITECTURE.md (kontrak), HANDOFF.md, all-plan/ (4 plan asli)
 # Frontend (dari sistemnya/)
 npm run build      # WAJIB hijau; cek CSS hash TETAP index-Bj97HpXF.css
 npm run dev        # bundler regen src/main.jsx otomatis (jangan edit src/main.jsx)
+
+# Exam Simulator — paket TERISOLASI (dari sistemnya/exam-sim/)
+npm install        # 175 pkg (pixi/three/r3f/tailwind/framer/gsap) — sekali
+npm run build      # tsc --noEmit + vite lib build; chunk Pixi/R3F terpisah
+npm run dev        # harness dev (?api=&session=&token=); butuh backend hidup
 ```
 - DB dev = sqlite `backend/ophtha_dev.db` (sudah ter-ingest 22 kasus).
 - Preview browser (jika perlu verifikasi UI): `.claude/launch.json` →
@@ -74,6 +98,11 @@ npm run dev        # bundler regen src/main.jsx otomatis (jangan edit src/main.j
 - VAD Silero auto-detect + echo-prevention penuh; toggle suara Settings.
 - Postgres/Alembic prod path, Docker deploy, debrief tampilkan
   missedItems/positiveNotes.
+- **Exam (v0.10.0, kontrak §9 K6):** call-site DOM legacy →
+  `window.OphthaExam.mount` (perlu slot markup = area dilindungi §8.1,
+  gate verifikasi browser). 21 sidecar `_exam` sisa (+ validasi dokter
+  SEMUA konten exam, §5.9). Asset foto fundus nyata (plan §8; kini
+  ilustrasi prosedural). Komposisi skor sesi total (§9 K7).
 
 ## 6. Provider aktif (lihat backend/.env)
 

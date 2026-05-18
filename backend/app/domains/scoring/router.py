@@ -27,6 +27,8 @@ router = APIRouter(
 
 class EvaluateRequest(BaseModel):
     session_id: str
+    ddx: dict | None = None             # §3A v0.12.0 (opsional)
+    management_plan: dict | None = None  # §3A v0.12.0 (opsional)
 
 
 @router.post("/evaluate")
@@ -44,7 +46,7 @@ def evaluate(
         .order_by(SessionTurn.turn_number)
     ).all()
     transcript = [{"role": t.role, "content": t.content} for t in turns]
-    report = judge_evaluate(s.case_id, transcript)
+    report = judge_evaluate(s.case_id, transcript, req.ddx, req.management_plan)
     s.total_score = report.get("totalScore", 0)
     s.report = report
     db.commit()

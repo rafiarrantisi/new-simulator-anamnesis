@@ -7,7 +7,7 @@
 // laporan kaya (missedItems/positiveNotes) = sub-step lanjutan (markup).
 // ============================================================
 
-async function fetchRagScoring(caseId) {
+async function fetchRagScoring(caseId, managementPlan, ddx) {
   try {
     if (!window.OPHTHA_API_BASE || !window.ApiDataStore || !window.getRagSessionId) return null;
     var sid = window.getRagSessionId(caseId);
@@ -22,7 +22,11 @@ async function fetchRagScoring(caseId) {
       res = await fetch(window.OPHTHA_API_BASE + '/api/scoring/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.token },
-        body: JSON.stringify({ session_id: sid }),
+        body: JSON.stringify({
+          session_id: sid,
+          ddx: ddx || null,
+          management_plan: managementPlan || null,
+        }),
         signal: ctrl.signal,
       });
     } finally {

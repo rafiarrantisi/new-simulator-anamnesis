@@ -321,6 +321,7 @@ function loadProfile() {
     favoriteCaseIds: [],
     sessionDates: {},
     dailyCompleted: {},
+    scoreHistory: [],   // §5.4 v0.12.0: [{ ts, caseId, score, breakdown? }]
   };
   try {
     var saved = localStorage.getItem('ophtha_profile');
@@ -331,6 +332,63 @@ function loadProfile() {
 
 function saveProfile(profile) {
   try { localStorage.setItem('ophtha_profile', JSON.stringify(profile)); } catch(e) {}
+}
+
+// §5.4 v0.12.0: catat skor sesi (rata-rata profil + Skill Heatmap nyata).
+// Idempoten ringan: skip bila entri identik (caseId+score) < 60 dtk lalu
+// (cegah dobel saat DebriefScreen re-render). Cap 200, terbaru dulu.
+function recordScore(profile, entry) {
+  var hist = Array.isArray(profile.scoreHistory) ? profile.scoreHistory : [];
+  var dup = hist.some(function (e) {
+    return e && e.caseId === entry.caseId && e.score === entry.score
+      && (Date.now() - (e.ts || 0)) < 60000;
+  });
+  if (dup) return profile;
+  var next = Object.assign({}, profile, {
+    scoreHistory: [{
+      ts: Date.now(),
+      caseId: entry.caseId,
+      score: Math.round(entry.score) || 0,
+      breakdown: entry.breakdown || null,
+    }].concat(hist).slice(0, 200),
+  });
+  saveProfile(next);
+  return next;
+}
+
+function scoreStats(profile) {
+  var h = (profile && Array.isArray(profile.scoreHistory)) ? profile.scoreHistory : [];
+  if (!h.length) return { count: 0, avg: 0, best: 0, recent: [] };
+  var scores = h.map(function (e) { return e.score || 0; });
+  var sum = scores.reduce(function (a, b) { return a + b; }, 0);
+  return {
+    count: h.length,
+    avg: Math.round(sum / h.length),
+    best: Math.max.apply(null, scores),
+    recent: h.slice(0, 8),
+  };
+}
+
+// Rata-rata komponen rubrik (kontrak §3A) dari scoreHistory utk Skill
+// Heatmap nyata. Hanya entri yang punya breakdown LLM-judge.
+function skillAverages(profile) {
+  var h = (profile && Array.isArray(profile.scoreHistory)) ? profile.scoreHistory : [];
+  var keys = ['coverage', 'fife', 'redFlags', 'communication'];
+  var acc = {}, n = {};
+  keys.forEach(function (k) { acc[k] = 0; n[k] = 0; });
+  h.forEach(function (e) {
+    var b = e && e.breakdown;
+    if (!b) return;
+    keys.forEach(function (k) {
+      if (b[k] && typeof b[k].score === 'number' && b[k].max) {
+        acc[k] += (b[k].score / b[k].max) * 100;
+        n[k] += 1;
+      }
+    });
+  });
+  return keys.map(function (k) {
+    return { key: k, samples: n[k], value: n[k] ? Math.round(acc[k] / n[k]) : null };
+  });
 }
 
 // Date helper

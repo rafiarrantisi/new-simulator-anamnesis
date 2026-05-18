@@ -404,6 +404,72 @@ const ProfileScreen = ({ profile, badges, auth, onUpdateProfile, onStartCase, on
         </div>
       </div>
 
+      {/* ── RATA-RATA NILAI (§5.4 v0.12.0, dari scoreHistory) ── */}
+      {(() => {
+        const st = (typeof scoreStats === 'function') ? scoreStats(profile)
+          : { count: 0, avg: 0, best: 0, recent: [] };
+        return (
+          <div className="au d1" style={{ marginBottom: 24 }}>
+            <SectionHeader title="Performa Penilaian" sub={`${st.count} sesi dinilai AI`} />
+            <Card padding={20}>
+              {st.count === 0 ? (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-3)', fontSize: 13, lineHeight: 1.6 }}>
+                  Belum ada nilai. Selesaikan kasus (dinilai AI) untuk<br />melihat rata-rata nilai kamu di sini.
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                    {[
+                      { v: st.avg,  l: 'Rata-rata Nilai', c: 'var(--primary)', icon: '📊' },
+                      { v: st.best, l: 'Skor Tertinggi',  c: 'var(--green)',   icon: '🏆' },
+                      { v: st.count,l: 'Sesi Dinilai',    c: 'var(--violet)',  icon: '✅' },
+                    ].map((s, i) => (
+                      <div key={i} style={{
+                        background: 'var(--surface-2)', borderRadius: 14, padding: '14px 16px',
+                        display: 'flex', flexDirection: 'column', gap: 2,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                          <span style={{ fontSize: 15 }}>{s.icon}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.l}</span>
+                        </div>
+                        <span style={{ fontSize: 26, fontWeight: 800, color: s.c, lineHeight: 1 }}>
+                          {s.v}{(i < 2) && <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>/100</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Sparkline sesi terakhir (bar mini, terbaru di kanan) */}
+                  {st.recent.length > 1 && (
+                    <div style={{ marginTop: 16 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                        {st.recent.length} sesi terakhir
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 56 }}>
+                        {st.recent.slice().reverse().map((e, i) => {
+                          const c = e.score >= 80 ? 'var(--green)' : e.score >= 60 ? 'var(--amber)' : 'var(--red)';
+                          return (
+                            <div key={i} title={`${e.score}/100`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                              <div style={{ width: '100%', display: 'flex', alignItems: 'flex-end', height: 44 }}>
+                                <div style={{
+                                  width: '100%', height: Math.max(6, (e.score / 100) * 44),
+                                  background: `linear-gradient(180deg, ${c}, ${c}bb)`,
+                                  borderRadius: 6,
+                                }} />
+                              </div>
+                              <span style={{ fontSize: 9, color: 'var(--text-3)', fontWeight: 700 }}>{e.score}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </Card>
+          </div>
+        );
+      })()}
+
       {/* ── ACTIVITY HEATMAP ── */}
       <div className="au d1" style={{ marginBottom: 24 }}>
         <Card padding={24}>

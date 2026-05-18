@@ -9,6 +9,7 @@ from app.database import init_db
 from app.domains.ai.router import router as ai_router
 from app.domains.auth.router import router as auth_router
 from app.domains.cases.router import router as cases_router
+from app.domains.exam.router import router as exam_router
 from app.domains.scoring.router import router as scoring_router
 from app.domains.sessions.router import router as sessions_router
 from app.domains.users.router import router as users_router
@@ -26,7 +27,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title=_settings.app_name, version="0.9.0", lifespan=lifespan)
+app = FastAPI(title=_settings.app_name, version="0.10.0", lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -37,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth_router, users_router, cases_router, sessions_router, scoring_router, ai_router):
+for r in (auth_router, users_router, cases_router, sessions_router, exam_router, scoring_router, ai_router):
     app.include_router(r)
 
 

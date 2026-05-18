@@ -1,0 +1,56 @@
+{
+  "_note": "DRAF — diturunkan dari kasus-02 BAGIAN A '### 5. Temuan Klinis Objektif' (sumber kanonik). Sidecar (kontrak §5.9, cermin _disclosure/). BELUM divalidasi dokter mata — jangan diklaim tervalidasi. Setelah sign-off boleh di-merge ke Bagian A.",
+  "caseId": "kasus-02",
+  "affectedEye": "OU",
+  "draft": true,
+  "visual_acuity": {
+    "od": "20/20 (6/6)",
+    "os": "20/25 (6/9, penurunan tidak bermakna)",
+    "near_od": "N5",
+    "near_os": "N5"
+  },
+  "tonometry": {
+    "iop_od": 17,
+    "iop_os": 14,
+    "method": "iCare (rebound tonometry)"
+  },
+  "pupils": {
+    "od_react": "bulat, isokor, reaktif cahaya (brisk)",
+    "os_react": "bulat, isokor, reaktif cahaya (brisk)",
+    "rapd": "none",
+    "notes": "Tidak ada APD bilateral. Direct & consensual reflex intak."
+  },
+  "motility": {
+    "full": true,
+    "restrictions": [],
+    "notes": "Penuh ke segala arah, tidak ada nystagmus, tidak ada diplopia."
+  },
+  "visual_field": {
+    "od": "full to finger counting",
+    "os": "full to finger counting",
+    "notes": "Tidak ada defek lapang pandang ke konfrontasi."
+  },
+  "slit_lamp": {
+    "lids": "Sekret mukoid mengering pada bulu mata",
+    "conjunctiva": "Folikel halus (+), injeksi ringan/trace, tidak ada kemosis",
+    "cornea": "Jernih, tidak ada infiltrat",
+    "anterior_chamber": "Dalam dan tenang",
+    "iris": "Normal",
+    "lens": "Jernih",
+    "notes": "Limfadenopati preaurikular & submandibular (+) bilateral — clue diagnostik kunci, hanya terungkap bila dipalpasi aktif."
+  },
+  "fundus": {
+    "disc_od": "Papil optik normal, batas tegas",
+    "disc_os": "Papil optik normal, batas tegas",
+    "cdr_od": 0.2,
+    "cdr_os": 0.2,
+    "macula_od": "Flat, foveal light reflex normal",
+    "macula_os": "Flat, foveal light reflex normal",
+    "vessels": "Kaliber dan rasio A/V normal bilateral",
+    "periphery": "Normal bilateral, tidak ada robekan/perdarahan"
+  },
+  "fluorescein": {
+    "pattern": "none",
+    "note": "Kornea jernih, tidak ada uptake — menyingkirkan keratitis/HSV (tidak ada dendritik)."
+  }
+}

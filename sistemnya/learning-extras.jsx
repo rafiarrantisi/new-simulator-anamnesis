@@ -97,11 +97,10 @@ const DDxCommitScreen = ({ caseData, session, onSubmit, onSkip, mode }) => {
           Komit Diagnosis Banding Anda
         </h1>
         <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, maxWidth: 720 }}>
-          Sebelum melakukan pemeriksaan, tuliskan hipotesis Anda berdasarkan
-          anamnesis. {isPreklinik
+          Berdasarkan anamnesis, tuliskan hipotesis diagnosis Anda. {isPreklinik
             ? 'Cukup satu diagnosis kerja jika belum yakin akan banding — yang penting Anda berkomitmen pada satu pemikiran.'
             : 'Untuk level koas, kemampuan menyusun banding (≥2) adalah inti pemeriksaan klinis.'}
-          {' '}Hipotesis ini akan dibandingkan dengan diagnosis akhir di debrief.
+          {' '}Selanjutnya Anda menyusun rencana tatalaksana, lalu dinilai di debrief.
         </p>
       </div>
 
@@ -201,7 +200,7 @@ const DDxCommitScreen = ({ caseData, session, onSubmit, onSkip, mode }) => {
                 <Btn variant="ghost" onClick={onSkip}>Lewati</Btn>
               )}
               <Btn variant="primary" onClick={handleSubmit} disabled={!canSubmit} icon="→">
-                Lanjut ke Pemeriksaan
+                Lanjut ke Tatalaksana
               </Btn>
             </div>
           </div>
@@ -615,8 +614,201 @@ const JournalList = ({ profile, onUpdate }) => {
   );
 };
 
+// ============================================================
+// RENCANA TATALAKSANA SCREEN  (v0.11.0 — kontrak §10 Changelog)
+// ============================================================
+// Berjalan antara DDx-commit dan Debrief. Mahasiswa merekomendasikan
+// pemeriksaan penunjang + terapi/obat (peran dokter), lalu dinilai LLM.
+// Design WAJIB identik DDxCommitScreen (token CSS var + komponen
+// existing; zero design.css baru — invarian §8.1).
+const ManagementPlanScreen = ({ caseData, session, onSubmit, onSkip, mode }) => {
+  const [penunjang, setPenunjang] = React.useState('');
+  const [terapi, setTerapi] = React.useState('');
+  const [edukasi, setEdukasi] = React.useState('');
+  const [focused, setFocused] = React.useState(null);
+
+  const canSubmit = terapi.trim().length >= 3;
+  const isOsce = mode === 'osce';
+  const ddx = session.ddxCommit || {};
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    onSubmit({
+      penunjang: penunjang.trim(),
+      terapi: terapi.trim(),
+      edukasi: edukasi.trim(),
+      committedAt: Date.now(),
+    });
+  };
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canSubmit) handleSubmit();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [penunjang, terapi, edukasi, canSubmit]);
+
+  const fieldStyle = (key) => ({
+    width: '100%', padding: '12px 14px',
+    border: `1.5px solid ${focused === key ? 'var(--primary)' : 'var(--border)'}`,
+    borderRadius: 12, fontSize: 13, fontFamily: 'Poppins',
+    background: 'var(--surface)', color: 'var(--text-1)',
+    outline: 'none', transition: 'border-color 0.18s', resize: 'vertical',
+    lineHeight: 1.55,
+  });
+
+  const FIELDS = [
+    { key: 'penunjang', label: 'Pemeriksaan penunjang yang direkomendasikan', opt: true,
+      val: penunjang, set: setPenunjang, rows: 3,
+      ph: 'Contoh: tidak perlu pemeriksaan penunjang (diagnosis klinis); atau swab konjungtiva/PCR bila atipikal/berat.' },
+    { key: 'terapi', label: 'Tatalaksana / terapi & obat', opt: false,
+      val: terapi, set: setTerapi, rows: 4,
+      ph: 'Contoh: kompres dingin, air mata buatan preservative-free 4–6×/hari, higiene tangan ketat. Antibiotik topikal TIDAK diindikasikan pada konjungtivitis viral.' },
+    { key: 'edukasi', label: 'Edukasi & rencana rujukan', opt: true,
+      val: edukasi, set: setEdukasi, rows: 3,
+      ph: 'Contoh: edukasi penularan & higiene, isolasi fase akut; rujuk bila visus turun / nyeri berat / tak membaik 2 minggu.' },
+  ];
+
+  return (
+    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 24px 60px' }}>
+      {/* Header — identik pola DDxCommitScreen */}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 8,
+            background: 'var(--primary-l)', color: 'var(--primary)',
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+          }}>
+            Tahap 3 dari 3
+          </span>
+          {isOsce
+            ? <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: 'var(--red-l)', color: 'var(--red-d)' }}>⏱️ OSCE</span>
+            : <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--text-3)' }}>Rencana klinis</span>
+          }
+        </div>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-1)', marginBottom: 6, textWrap: 'pretty' }}>
+          Rencana Tatalaksana
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, maxWidth: 720 }}>
+          Berdasarkan anamnesis dan diagnosis banding Anda, susun rencana seperti
+          seorang dokter: pemeriksaan penunjang yang perlu, lalu terapi/obat dan
+          edukasi. Penilaian akhir (oleh AI) akan menjelaskan apa yang sudah baik
+          dan apa yang kurang.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 24 }}>
+        {/* ── Left: plan form ───────────────────────────── */}
+        <div style={{
+          background: 'var(--surface)', borderRadius: 20, padding: '24px 26px',
+          border: '1px solid var(--border)', boxShadow: 'var(--sh-sm)',
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {FIELDS.map(f => (
+              <div key={f.key}>
+                <label style={{
+                  display: 'block', fontSize: 11, fontWeight: 700,
+                  color: 'var(--text-2)', marginBottom: 8,
+                  letterSpacing: '0.05em', textTransform: 'uppercase',
+                }}>
+                  {f.label}{' '}
+                  {f.opt
+                    ? <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>(opsional)</span>
+                    : <span style={{ color: 'var(--red)', fontWeight: 500 }}>(wajib)</span>}
+                </label>
+                <textarea
+                  value={f.val}
+                  onChange={(e) => f.set(e.target.value)}
+                  placeholder={f.ph}
+                  onFocus={() => setFocused(f.key)}
+                  onBlur={() => setFocused(null)}
+                  rows={f.rows}
+                  style={fieldStyle(f.key)}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* CTA row — identik pola DDxCommitScreen */}
+          <div style={{
+            marginTop: 22, display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              <kbd style={{
+                background: 'var(--surface-2)', padding: '2px 7px',
+                borderRadius: 5, fontSize: 10, fontFamily: 'monospace',
+                border: '1px solid var(--border)',
+              }}>⌘/Ctrl + Enter</kbd> untuk submit
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {onSkip && !isOsce && (
+                <Btn variant="ghost" onClick={onSkip}>Lewati</Btn>
+              )}
+              <Btn variant="primary" onClick={handleSubmit} disabled={!canSubmit} icon="→">
+                Lihat Penilaian
+              </Btn>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Right: DDx recap sidebar ─────────────────── */}
+        <div>
+          <div style={{
+            background: 'var(--surface)', borderRadius: 18, padding: '18px 18px',
+            border: '1px solid var(--border)', boxShadow: 'var(--sh-sm)',
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
+              textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12,
+            }}>
+              🧠 Diagnosis Banding Anda
+            </div>
+            {[ddx.dx1, ddx.dx2, ddx.dx3].filter(Boolean).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+                {[ddx.dx1, ddx.dx2, ddx.dx3].filter(Boolean).map((d, i) => (
+                  <div key={i} style={{
+                    fontSize: 12, padding: '7px 11px', background: 'var(--surface-2)',
+                    borderRadius: 8, color: 'var(--text-2)', lineHeight: 1.4,
+                    display: 'flex', gap: 8,
+                  }}>
+                    <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{i + 1}</span>
+                    <span>{d}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{
+                padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 10,
+                fontSize: 12, color: 'var(--text-3)', marginBottom: 14,
+              }}>
+                Tidak ada DDx dikomit (dilewati).
+              </div>
+            )}
+            {ddx.reasoning && (
+              <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                <span style={{ fontWeight: 700 }}>Alasan:</span> {ddx.reasoning}
+              </div>
+            )}
+          </div>
+
+          <div style={{
+            marginTop: 14, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6,
+            padding: '12px 14px', background: 'var(--primary-ll)', borderRadius: 12,
+            border: '1px solid var(--primary-l)',
+          }}>
+            💡 Tidak ada kunci jawaban di sini. AI akan menilai kelengkapan &
+            ketepatan rencana Anda di debrief.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Expose globally so other scripts can use these without an import chain
 Object.assign(window, {
-  DDxCommitScreen, ReflectionCard, DDxCompareCard, JournalList,
+  DDxCommitScreen, ManagementPlanScreen, ReflectionCard, DDxCompareCard, JournalList,
   saveJournalEntry, fmtJournalDate,
 });

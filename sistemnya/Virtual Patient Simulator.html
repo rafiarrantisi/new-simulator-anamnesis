@@ -239,30 +239,35 @@
         navigate('ddx');
       }, [badges, profile, currentCase, settings, navigate]);
 
-      // ── DDx commit → exam (if findings) or debrief ─────────────
+      // ── DDx commit → Rencana Tatalaksana (v0.11.0) ────────────
+      // Exam DICABUT dari flow (keputusan user). Selalu lanjut ke step
+      // Rencana Tatalaksana sebelum debrief.
       const handleDDxCommit = React.useCallback((ddxCommit) => {
         setLastSession(prev => prev ? { ...prev, ddxCommit } : prev);
-        if (EXAM_FINDINGS && EXAM_FINDINGS[currentCase.id]) {
-          navigate('exam');
-        } else {
-          const goDebrief = () => {
-            if (settings.confetti && lastSession?.scoring?.score >= 75 && window.confetti) {
-              setTimeout(() => window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 }, colors: ['#5865F2','#14B8A6','#F59E0B','#8B5CF6'] }), 600);
-            }
-            navigate('debrief');
-          };
-          // C3 sub-step 2: kasus RAG → skor dari LLM-judge backend.
-          if (currentCase && currentCase._rag && window.fetchRagScoring) {
-            setEvaluating(true);
-            window.fetchRagScoring(currentCase.id)
-              .then((sc) => {
-                if (sc) setLastSession(prev => prev ? { ...prev, scoring: { ...prev.scoring, ...sc } } : prev);
-              })
-              .catch(() => {})
-              .finally(() => { setEvaluating(false); goDebrief(); });
-          } else {
-            goDebrief();
+        navigate('tatalaksana');
+      }, [navigate]);
+
+      // ── Rencana Tatalaksana → Debrief (skor LLM-judge) ────────
+      const handlePlanSubmit = React.useCallback((managementPlan) => {
+        setLastSession(prev => prev ? { ...prev, managementPlan } : prev);
+        const goDebrief = () => {
+          if (settings.confetti && lastSession?.scoring?.score >= 75 && window.confetti) {
+            setTimeout(() => window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 }, colors: ['#5865F2','#14B8A6','#F59E0B','#8B5CF6'] }), 600);
           }
+          navigate('debrief');
+        };
+        // Kasus RAG → skor dari LLM-judge backend. managementPlan
+        // diteruskan (forward-compat; evaluasi kaya = sub-step berikut).
+        if (currentCase && currentCase._rag && window.fetchRagScoring) {
+          setEvaluating(true);
+          window.fetchRagScoring(currentCase.id, managementPlan, lastSession && lastSession.ddxCommit)
+            .then((sc) => {
+              if (sc) setLastSession(prev => prev ? { ...prev, scoring: { ...prev.scoring, ...sc } } : prev);
+            })
+            .catch(() => {})
+            .finally(() => { setEvaluating(false); goDebrief(); });
+        } else {
+          goDebrief();
         }
       }, [currentCase, settings, lastSession, navigate]);
 
@@ -354,11 +359,12 @@
       const isSimulator = screen === 'simulator';
       const isExam      = screen === 'exam';
       const isDDx       = screen === 'ddx';
+      const isPlan      = screen === 'tatalaksana';
       const isBuilder   = screen === 'builder';
-      const hideHeader  = isLanding || isAuth || isSimulator || isExam || isDDx || isBuilder;
+      const hideHeader  = isLanding || isAuth || isSimulator || isExam || isDDx || isPlan || isBuilder;
 
       // ── Simulator top bar height ─────────────────────────
-      const simBarHeight = (isSimulator || isExam || isDDx) ? 52 : 0;
+      const simBarHeight = (isSimulator || isExam || isDDx || isPlan) ? 52 : 0;
 
       return (
         <ToastProvider>
@@ -378,7 +384,7 @@
             )}
 
             {/* ── Simulator / Exam top bar ── */}
-            {(isSimulator || isExam || isDDx) && currentCase && (
+            {(isSimulator || isExam || isDDx || isPlan) && currentCase && (
               <div style={{
                 height: 52, background: 'var(--surface)',
                 borderBottom: '1px solid var(--border)',
@@ -500,6 +506,16 @@
                   mode={playMode}
                   onSubmit={handleDDxCommit}
                   onSkip={playMode === 'osce' ? null : () => handleDDxCommit({ skipped: true, committedAt: Date.now() })}
+                />
+              )}
+
+              {screen === 'tatalaksana' && currentCase && lastSession && (
+                <ManagementPlanScreen
+                  caseData={currentCase}
+                  session={lastSession}
+                  mode={playMode}
+                  onSubmit={handlePlanSubmit}
+                  onSkip={playMode === 'osce' ? null : () => handlePlanSubmit({ skipped: true, committedAt: Date.now() })}
                 />
               )}
 
