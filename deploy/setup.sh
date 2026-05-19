@@ -25,8 +25,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUN_USER="${SUDO_USER:-ubuntu}"
 DIST_DIR="$APP_DIR/sistemnya/dist"
+# Origin publik utk VITE_API_BASE (frontend same-origin). Default https://
+# (saat pakai domain+certbot). Untuk IP/HTTP, set PUBLIC_ORIGIN=http://IP.
+PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-https://$DOMAIN}"
 
-echo ">> APP_DIR=$APP_DIR  RUN_USER=$RUN_USER  DOMAIN=$DOMAIN"
+echo ">> APP_DIR=$APP_DIR  RUN_USER=$RUN_USER  DOMAIN=$DOMAIN  ORIGIN=$PUBLIC_ORIGIN"
 
 echo ">> [1/8] paket sistem"
 export DEBIAN_FRONTEND=noninteractive
@@ -69,12 +72,12 @@ echo ">> [5/8] ingest 22 kasus markdown → registry DB"
 sudo -u "$RUN_USER" bash -c "cd '$APP_DIR/backend' && ./.venv/bin/python -m pipeline.ingest --all --no-embed" \
   || echo "!! ingest gagal (lanjut; bisa di-ingest ulang manual nanti)"
 
-echo ">> [6/8] build frontend (VITE_API_BASE=https://$DOMAIN)"
+echo ">> [6/8] build frontend (VITE_API_BASE=$PUBLIC_ORIGIN)"
 sudo -u "$RUN_USER" bash -c "
   set -e
   cd '$APP_DIR/sistemnya'
   (npm ci || npm install)
-  VITE_API_BASE='https://$DOMAIN' npm run build
+  VITE_API_BASE='$PUBLIC_ORIGIN' npm run build
 "
 [[ -f "$DIST_DIR/index.html" ]] || { echo "ERROR: build frontend gagal ($DIST_DIR/index.html tak ada)" >&2; exit 1; }
 
@@ -101,19 +104,17 @@ fi
 cat <<EOF
 
 ============================================================
-SETUP DASAR SELESAI. Berikutnya (sekali):
+SETUP DASAR SELESAI.
 
-1) Pastikan DuckDNS '$DOMAIN' MENUNJUK ke IP publik EC2 ini,
-   dan Security Group EC2 buka port 80 & 443 (dan 22 utk SSH).
+>> APP SUDAH BISA DIBUKA: $PUBLIC_ORIGIN
 
-2) Aktifkan HTTPS (Let's Encrypt):
-     sudo apt-get install -y certbot python3-certbot-nginx
-     sudo certbot --nginx -d $DOMAIN --redirect -m EMAIL_KAMU --agree-tos -n
-
-3) Buka: https://$DOMAIN
+Untuk HTTPS + domain (setelah DuckDNS '$DOMAIN' menunjuk ke IP ini):
+  sudo apt-get install -y certbot python3-certbot-nginx
+  sudo certbot --nginx -d $DOMAIN --redirect -m EMAIL_KAMU --agree-tos -n
+  # lalu rebuild dgn origin https:
+  cd $APP_DIR && sudo PUBLIC_ORIGIN=https://$DOMAIN DOMAIN=$DOMAIN bash deploy/setup.sh
 
 Update kode nanti:
-   cd $APP_DIR && git pull && sudo DOMAIN=$DOMAIN bash deploy/setup.sh
-   (rebuild FE + restart backend otomatis)
+  cd $APP_DIR && git pull && sudo PUBLIC_ORIGIN=$PUBLIC_ORIGIN DOMAIN=$DOMAIN bash deploy/setup.sh
 ============================================================
 EOF
