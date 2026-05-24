@@ -110,7 +110,9 @@ def evaluate(
         )
         # Judge pakai model murah terpisah (rag-plan §9.1).
         raw = get_llm_client().generate(
-            system, user, model=get_settings().llm_judge_model
+            system, user,
+            model=get_settings().llm_judge_model,
+            max_tokens=get_settings().llm_judge_max_tokens,
         )
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         report = json.loads(m.group(0) if m else raw)

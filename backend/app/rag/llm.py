@@ -38,10 +38,12 @@ def _with_retry(fn):
 
 class LlmClient(Protocol):
     def stream(self, system: str, messages: list[dict],
-               model: str | None = None) -> Iterator[str]: ...
+               model: str | None = None,
+               max_tokens: int | None = None) -> Iterator[str]: ...
 
     def generate(self, system: str, messages: list[dict],
-                 model: str | None = None) -> str: ...
+                 model: str | None = None,
+                 max_tokens: int | None = None) -> str: ...
 
 
 class StubLlmClient:
@@ -51,7 +53,8 @@ class StubLlmClient:
     PREFIX = "[STUB LLM] "
 
     def generate(self, system: str, messages: list[dict],
-                 model: str | None = None) -> str:
+                 model: str | None = None,
+                 max_tokens: int | None = None) -> str:
         last_user = ""
         for m in reversed(messages):
             if m.get("role") == "user":
@@ -65,7 +68,8 @@ class StubLlmClient:
         )
 
     def stream(self, system: str, messages: list[dict],
-               model: str | None = None) -> Iterator[str]:
+               model: str | None = None,
+               max_tokens: int | None = None) -> Iterator[str]:
         for tok in self.generate(system, messages).split(" "):
             yield tok + " "
 
@@ -95,13 +99,16 @@ def _openai_compatible(base_url: str | None):
         return e
 
     class _OAI:
-        def generate(self, system, messages, model=None):
+        def generate(self, system, messages, model=None, max_tokens=None):
             def _call():
-                r = client.chat.completions.create(
-                    model=model or s.llm_model,
-                    messages=[{"role": "system", "content": system}, *messages],
-                    temperature=0.5,
-                )
+                kwargs = {
+                    "model": model or s.llm_model,
+                    "messages": [{"role": "system", "content": system}, *messages],
+                    "temperature": 0.5,
+                }
+                if max_tokens is not None:
+                    kwargs["max_tokens"] = max_tokens
+                r = client.chat.completions.create(**kwargs)
                 if not getattr(r, "choices", None):
                     raise RuntimeError(
                         f"LLM tanpa choices: {_err(r) or repr(r)[:200]}"
@@ -123,13 +130,16 @@ def _openai_compatible(base_url: str | None):
 
             return _with_retry(_call)
 
-        def stream(self, system, messages, model=None):
-            st = client.chat.completions.create(
-                model=model or s.llm_model,
-                messages=[{"role": "system", "content": system}, *messages],
-                temperature=0.5,
-                stream=True,
-            )
+        def stream(self, system, messages, model=None, max_tokens=None):
+            kwargs = {
+                "model": model or s.llm_model,
+                "messages": [{"role": "system", "content": system}, *messages],
+                "temperature": 0.5,
+                "stream": True,
+            }
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            st = client.chat.completions.create(**kwargs)
             for ch in st:
                 if not getattr(ch, "choices", None):
                     continue
@@ -149,17 +159,19 @@ def _anthropic():  # pragma: no cover - butuh SDK + key
     client = Anthropic(api_key=s.llm_api_key)
 
     class _Anth:
-        def generate(self, system, messages, model=None):
+        def generate(self, system, messages, model=None, max_tokens=None):
             r = client.messages.create(
                 model=model or s.llm_model, system=system,
-                max_tokens=1024, messages=messages, temperature=0.5,
+                max_tokens=max_tokens or 1024,
+                messages=messages, temperature=0.5,
             )
             return "".join(b.text for b in r.content if b.type == "text")
 
-        def stream(self, system, messages, model=None):
+        def stream(self, system, messages, model=None, max_tokens=None):
             with client.messages.stream(
                 model=model or s.llm_model, system=system,
-                max_tokens=1024, messages=messages, temperature=0.5,
+                max_tokens=max_tokens or 1024,
+                messages=messages, temperature=0.5,
             ) as st:
                 yield from st.text_stream
 

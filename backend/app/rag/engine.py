@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from app.config import get_settings
 from app.rag.llm import get_llm_client
 from app.rag.prompt import build_messages, build_system_prompt, is_first_turn
 from app.rag.retriever import load_case, retrieve
@@ -29,11 +30,15 @@ def _prepare(case_id: str, history: list[dict], user_message: str):
 
 def respond(case_id: str, history: list[dict], user_message: str) -> str:
     system, messages, _ = _prepare(case_id, history, user_message)
-    return get_llm_client().generate(system, messages).strip()
+    return get_llm_client().generate(
+        system, messages, max_tokens=get_settings().llm_persona_max_tokens
+    ).strip()
 
 
 def stream_respond(
     case_id: str, history: list[dict], user_message: str
 ) -> Iterator[str]:
     system, messages, _ = _prepare(case_id, history, user_message)
-    yield from get_llm_client().stream(system, messages)
+    yield from get_llm_client().stream(
+        system, messages, max_tokens=get_settings().llm_persona_max_tokens
+    )

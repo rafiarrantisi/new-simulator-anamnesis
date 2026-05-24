@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # OpenRouter opsional (atribusi; aman dikosongkan)
     llm_site_url: str = ""
     llm_app_title: str = "OphthaSim"
+    # Tier A v0.13.0: cap balasan utk persona (cegah essay panjang →
+    # kurangi tail latency). 220 ≈ 3-4 kalimat ID, cukup utk balasan
+    # pasien answer-restrained. Judge butuh lebih utk JSON struktural.
+    llm_persona_max_tokens: int = 220
+    llm_judge_max_tokens: int = 1200
 
     # ── Voice (Fase 4) ──
     # STT: OpenAI-compatible /audio/transcriptions. Default reuse OpenRouter

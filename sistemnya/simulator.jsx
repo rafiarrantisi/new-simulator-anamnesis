@@ -95,7 +95,23 @@ const MessageBubble = ({ msg, isNew, showLiveFeedback = false }) => {
           border: isPatient ? '1px solid var(--border)' : 'none',
           boxShadow: isPatient ? 'var(--sh-xs)' : 'none',
         }}>
-          {msg.text}
+          {msg.streaming && !msg.text ? (
+            // Tier A v0.13.0: dot inline saat menunggu chunk pertama
+            // (precedent industri ChatGPT/Claude — anchor visual stabil
+            // sejak detik 0). Token+keyframe existing, zero design.css baru.
+            <span style={{ display: 'inline-flex', gap: 5, alignItems: 'center', padding: '2px 0' }}>
+              {[0, 1, 2].map(i => (
+                <span key={i} style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: 'var(--text-3)',
+                  animation: 'pulse 1.2s ease-in-out ' + (i * 0.2) + 's infinite',
+                  opacity: 0.6,
+                }} />
+              ))}
+            </span>
+          ) : (
+            msg.text
+          )}
         </div>
         {showLiveFeedback && msg.reward && (
           <div style={{
@@ -491,7 +507,6 @@ const SuggestionItem = ({ suggestion, onSuggestionClick, color }) => {
 // ── Conversation Panel (Center) ───────────────────────────
 const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }) => {
   const [input, setInput] = React.useState('');
-  const [typing, setTyping] = React.useState(false);
   const endRef = React.useRef(null);
   const inputRef = React.useRef(null);
   // Voice (Fase 4 v0.8.1) — Push-to-Talk; aditif, hanya jika backend+mic.
@@ -502,6 +517,10 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
   const voiceOn = typeof window !== 'undefined' && window.OPHTHA_API_BASE &&
     window.OphthaVoice && window.OphthaVoice.supported();
 
+  // Tier A v0.13.0: streaming-derived (gantikan local `typing` state).
+  // True saat ada placeholder patient msg yang masih streaming.
+  const isStreaming = session.messages.some(m => m.role === 'patient' && m.streaming);
+
   const isOSCE = mode === 'osce';
   const isTutorial = mode === 'tutorial';
   // Live feedback (green check, red flag inline) hanya untuk tutorial
@@ -511,27 +530,29 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
     if (endRef.current) {
       endRef.current.parentElement.scrollTop = endRef.current.offsetTop - 40;
     }
-  }, [session.messages.length, typing]);
+  }, [session.messages, isStreaming]);
 
-  // Auto-speak (v0.8.3): balasan pasien baru → TTS. Aditif, gated voiceOn,
-  // skip saat merekam (echo dasar). Graceful bila TTS gagal.
+  // Auto-speak (v0.8.3 + Tier A v0.13.0): balasan pasien baru → TTS.
+  // Gated voiceOn, skip saat merekam, dan WAJIB tunggu `!streaming` agar
+  // TTS dipanggil sekali pada teks final (bukan per-chunk). Graceful bila
+  // TTS_API_KEY kosong (speak() silent-return). Voice-ready: saat key
+  // diisi nanti, tak perlu code change.
   React.useEffect(() => {
     if (!voiceOn || recording) return;
     const msgs = session.messages;
     const last = msgs[msgs.length - 1];
-    if (last && last.role === 'patient' && last.text && last.id !== lastSpokenRef.current) {
+    if (last && last.role === 'patient' && last.text && !last.streaming &&
+        last.id !== lastSpokenRef.current) {
       lastSpokenRef.current = last.id;
       window.OphthaVoice.speak(last.text);
     }
-  }, [session.messages.length]);
+  }, [session.messages, voiceOn, recording]);
 
   const handleSend = () => {
     const text = input.trim();
-    if (!text || typing) return;
+    if (!text || isStreaming) return;
     setInput('');
     onSend(text);
-    setTyping(true);
-    setTimeout(() => setTyping(false), 1200 + Math.random() * 600);
   };
 
   const handleKey = (e) => {
@@ -540,7 +561,7 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
 
   // Push-to-Talk: klik 1 = mulai rekam, klik 2 = stop → STT → kirim.
   const handleMic = async () => {
-    if (vbusy || typing) return;
+    if (vbusy || isStreaming) return;
     try {
       if (!recording) {
         const cap = new window.OphthaVoice.AudioCapture();
@@ -587,7 +608,9 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
         {session.messages.map((msg, i) => (
           <MessageBubble key={msg.id} msg={msg} isNew={i >= session.messages.length - 2} showLiveFeedback={showLiveFeedback} />
         ))}
-        {typing && <TypingIndicator />}
+        {/* Tier A v0.13.0: TypingIndicator terpisah dihentikan — dot inline
+            di placeholder bubble (lihat MessageBubble) saat streaming.
+            Komponen TypingIndicator tetap di-export utk back-compat. */}
         <div ref={endRef} />
       </div>
 
@@ -635,12 +658,12 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
         </div>
         {voiceOn && (
           <Btn variant={recording ? 'danger' : 'secondary'} onClick={handleMic}
-            disabled={typing || vbusy}
+            disabled={isStreaming || vbusy}
             style={{ padding: '11px 14px', flexShrink: 0, borderRadius: 14 }}>
             {vbusy ? '…' : recording ? '⏹ Stop' : '🎙️'}
           </Btn>
         )}
-        <Btn variant="primary" onClick={handleSend} disabled={!input.trim() || typing}
+        <Btn variant="primary" onClick={handleSend} disabled={!input.trim() || isStreaming}
           style={{ padding: '11px 18px', flexShrink: 0, borderRadius: 14 }}>
           Kirim
         </Btn>
@@ -656,6 +679,12 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
 
 // ── Simulator Screen (Main) ───────────────────────────────
 const SimulatorScreen = ({ caseData, onEnd, profile, mode = 'normal', osceSeconds = 420 }) => {
+  // Tier A v0.13.0: tutup WebSocket RAG saat keluar simulator (navigate /
+  // unmount). Cegah koneksi nyangkut + pending turn ke-orphan di server.
+  React.useEffect(() => {
+    return () => { if (typeof window !== 'undefined' && window.closeRagWs) window.closeRagWs(); };
+  }, []);
+
   // OSCE countdown
   const [osceLeft, setOsceLeft] = React.useState(osceSeconds);
   const osceEndedRef = React.useRef(false);
@@ -805,16 +834,38 @@ const SimulatorScreen = ({ caseData, onEnd, profile, mode = 'normal', osceSecond
   React.useEffect(() => { sessionRef.current = session; }, [session]);
 
   const handleSendStable = React.useCallback((text) => {
+    // Tier A v0.13.0: streaming token-by-token. Push user msg + placeholder
+    // patient msg ({streaming:true, text:''}) atomik → anchor visual instan.
+    // onChunk update text incremental; resolve finalisasi (streaming:false).
+    // Buang setTimeout 1100-1700ms artificial — pakai TTFT nyata.
     const currentSession = sessionRef.current;
-    const userMsgId = Date.now() + 'u';
+    const ts = Date.now();
+    const userMsgId = ts + 'u';
+    const patientMsgId = ts + 'p';
     setSession(prev => ({
       ...prev,
-      messages: [...prev.messages, { id: userMsgId, role: 'user', text }],
+      messages: [
+        ...prev.messages,
+        { id: userMsgId, role: 'user', text },
+        { id: patientMsgId, role: 'patient', text: '', streaming: true },
+      ],
       questionCount: prev.questionCount + 1,
     }));
 
-    setTimeout(() => {
-      PatientEngine.respond({ caseContext: caseData, history: currentSession.messages, userMessage: text, locale: 'id', mode }).then(({ category, responseData }) => {
+    const onChunk = (delta) => {
+      if (!delta) return;
+      setSession(prev => ({
+        ...prev,
+        messages: prev.messages.map(m =>
+          m.id === patientMsgId ? { ...m, text: m.text + delta } : m
+        ),
+      }));
+    };
+
+    PatientEngine.respond(
+      { caseContext: caseData, history: currentSession.messages, userMessage: text, locale: 'id', mode },
+      { onChunk }
+    ).then(({ category, responseData }) => {
       const alreadyKnown = currentSession.discoveredDomains.has(category);
       let patientText = responseData.text;
       if (alreadyKnown && category !== 'default') {
@@ -851,11 +902,18 @@ const SimulatorScreen = ({ caseData, onEnd, profile, mode = 'normal', osceSecond
 
         return {
           ...prev,
-          messages: [...prev.messages, {
-            id: Date.now() + 'p', role: 'patient', text: patientText,
-            reward: isNewFind && !responseData.isRedFlag ? responseData.found : null,
-            redFlag: isNewFind && responseData.isRedFlag,
-          }],
+          // Finalisasi pesan placeholder by-id: ganti text final + streaming:false.
+          messages: prev.messages.map(m =>
+            m.id === patientMsgId
+              ? {
+                  ...m,
+                  text: patientText,
+                  streaming: false,
+                  reward: isNewFind && !responseData.isRedFlag ? responseData.found : null,
+                  redFlag: isNewFind && responseData.isRedFlag,
+                }
+              : m
+          ),
           discoveredDomains: newDiscovered,
           findings: newFindings,
           redFlagsFound: newRedFlags,
@@ -863,8 +921,17 @@ const SimulatorScreen = ({ caseData, onEnd, profile, mode = 'normal', osceSecond
           xpGained: prev.xpGained + xpGain,
         };
       });
-      });
-    }, 1100 + Math.random() * 600);
+    }).catch(() => {
+      // Engine sudah fallback graceful; jika sampai sini = even fallback gagal.
+      setSession(prev => ({
+        ...prev,
+        messages: prev.messages.map(m =>
+          m.id === patientMsgId
+            ? { ...m, text: '(Gagal mendapat balasan. Coba kirim ulang ya, Dok.)', streaming: false, error: true }
+            : m
+        ),
+      }));
+    });
   }, [caseData, toast, mode]);
 
   const osceBarH = mode === 'osce' ? 44 : 0;

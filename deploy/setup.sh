@@ -86,6 +86,22 @@ sed -e "s|__DOMAIN__|$DOMAIN|g" -e "s|__DIST__|$DIST_DIR|g" \
   "$APP_DIR/deploy/nginx-ophtha.conf" > /etc/nginx/sites-available/ophtha.conf
 ln -sf /etc/nginx/sites-available/ophtha.conf /etc/nginx/sites-enabled/ophtha.conf
 rm -f /etc/nginx/sites-enabled/default
+# Tier A v0.13.0: map $http_upgrade utk WebSocket — level http (conf.d).
+cp "$APP_DIR/deploy/nginx-upgrade-map.conf" /etc/nginx/conf.d/upgrade-map.conf
+# Patch idempoten block 443 (jika certbot sudah jalan): pastikan WS headers
+# + proxy_read_timeout panjang ada juga di blok HTTPS (certbot kadang
+# tak menyalin custom proxy directives saat menambah listen 443 ssl).
+SITE=/etc/nginx/sites-available/ophtha.conf
+if grep -q "listen 443 ssl" "$SITE" 2>/dev/null && \
+   ! grep -q "proxy_read_timeout 600s" "$SITE" 2>/dev/null; then
+  echo "!! Blok 443 ada tapi belum punya WS headers/timeout panjang."
+  echo "!! Edit MANUAL: tambahkan di location ~ ^/(api|health) blok 443:"
+  echo "      proxy_http_version 1.1;"
+  echo "      proxy_set_header Upgrade \$http_upgrade;"
+  echo "      proxy_set_header Connection \$connection_upgrade;"
+  echo "      proxy_read_timeout 600s;  proxy_send_timeout 600s;"
+  echo "      http2 on;     # di server-level blok 443"
+fi
 nginx -t
 systemctl reload nginx
 

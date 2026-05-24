@@ -113,6 +113,94 @@ async function _ragSession(caseId, mode) {
   return d.sessionId;
 }
 
+// ============================================================
+// WebSocket streaming (Tier A v0.13.0)
+// Persistent WS per-sessionId. Backend protokol §6:
+//   IN  {type:'text', text}
+//   OUT {type:'chunk', text} × N, {type:'turn_complete'} | {type:'error', message}
+// Antrian FIFO per sesi: setiap respond() menambah job ke queue, lalu
+// menunggu chunk + turn_complete. Persistent connection → TTFT pure LLM.
+// ============================================================
+var _ragWsBySession = {};         // sid → WebSocket
+var _ragQueueBySession = {};      // sid → [{resolve,reject,onChunk,accum,done}]
+
+function _wsUrlFor(sid, token) {
+  var base = _ragApiBase();
+  var ws = base.replace(/^http/, 'ws'); // https → wss, http → ws
+  return ws + '/api/sessions/' + sid + '/ws?token=' + encodeURIComponent(token);
+}
+
+async function _ensureWs(sid) {
+  var existing = _ragWsBySession[sid];
+  if (existing && existing.readyState === WebSocket.OPEN) return existing;
+  if (existing && existing.readyState === WebSocket.CONNECTING) {
+    await new Promise(function (res, rej) {
+      existing.addEventListener('open', res, { once: true });
+      existing.addEventListener('error', function () { rej(new Error('ws-failed')); }, { once: true });
+    });
+    return existing;
+  }
+  // Pastikan auth (auto-guest jika perlu) lalu pakai raw token (bukan "Bearer ...").
+  var auth = await window.ApiDataStore.loadAuth();
+  if (!auth || !auth.token) auth = await _ragNewGuest();
+  var ws = new WebSocket(_wsUrlFor(sid, auth.token));
+  _ragWsBySession[sid] = ws;
+  _ragQueueBySession[sid] = _ragQueueBySession[sid] || [];
+
+  ws.addEventListener('message', function (ev) {
+    var data;
+    try { data = JSON.parse(ev.data); } catch (e) { return; }
+    var queue = _ragQueueBySession[sid];
+    if (!queue || !queue.length) return;
+    var head = queue[0];
+    if (data.type === 'chunk') {
+      var t = data.text || '';
+      head.accum += t;
+      try { if (head.onChunk) head.onChunk(t); } catch (e) {}
+    } else if (data.type === 'turn_complete') {
+      head.done = true;
+      head.resolve(head.accum);
+      queue.shift();
+    } else if (data.type === 'error') {
+      head.done = true;
+      head.reject(new Error(data.message || 'ws-error'));
+      queue.shift();
+    }
+  });
+  ws.addEventListener('close', function (ev) {
+    delete _ragWsBySession[sid];
+    var queue = _ragQueueBySession[sid] || [];
+    queue.forEach(function (t) {
+      if (!t.done) t.reject(new Error(ev.code === 4401 ? 'auth-expired' : 'ws-closed'));
+    });
+    _ragQueueBySession[sid] = [];
+  });
+
+  await new Promise(function (res, rej) {
+    ws.addEventListener('open', res, { once: true });
+    ws.addEventListener('error', function () { rej(new Error('ws-failed')); }, { once: true });
+  });
+  return ws;
+}
+
+function _sendOverWs(sid, text, onChunk) {
+  return _ensureWs(sid).then(function (ws) {
+    return new Promise(function (resolve, reject) {
+      var queue = _ragQueueBySession[sid] = _ragQueueBySession[sid] || [];
+      queue.push({ resolve: resolve, reject: reject, onChunk: onChunk, accum: '', done: false });
+      ws.send(JSON.stringify({ type: 'text', text: text }));
+    });
+  });
+}
+
+function closeRagWs() {
+  Object.keys(_ragWsBySession).forEach(function (sid) {
+    try { _ragWsBySession[sid].close(1000); } catch (e) {}
+  });
+  _ragWsBySession = {};
+  _ragQueueBySession = {};
+}
+
 var RagPatientEngine = {
   respond: async function (input, opts) {
     var caseId = _ragCaseId(input);
@@ -121,38 +209,39 @@ var RagPatientEngine = {
     if (!caseId || !_ragApiBase() || !window.ApiDataStore) {
       return StaticPatientEngine.respond(input);
     }
+    var onChunk = (opts && typeof opts.onChunk === 'function') ? opts.onChunk : null;
     async function attempt() {
       var sid = await _ragSession(caseId, input.mode);
-      return _ragFetch('/api/sessions/' + sid + '/turns', 'POST', {
-        text: input.userMessage,
-      });
+      var reply = await _sendOverWs(sid, input.userMessage, onChunk);
+      return reply || '';
     }
-    var d;
+    var reply;
     try {
-      d = await attempt();
+      reply = await attempt();
     } catch (e1) {
-      // FIX v0.11.0: token akses kadaluarsa (TTL 15 mnt, tanpa refresh di
-      // C1) atau sesi milik auth mati (404) → bubble pasien kosong.
-      // Tamu baru + sesi baru + ULANG SEKALI.
+      // Token kadaluarsa (close code 4401) / sesi mati → tamu baru + sesi
+      // baru + ulang SEKALI (mirror logic REST sebelumnya, kontrak §3B.1).
       try {
+        if (_ragWsBySession[_ragSessionByCase[caseId]]) {
+          try { _ragWsBySession[_ragSessionByCase[caseId]].close(1000); } catch (e) {}
+        }
         await _ragNewGuest();
         delete _ragSessionByCase[caseId];
-        d = await attempt();
+        reply = await attempt();
       } catch (e2) {
-        return _ragErrorResult(); // graceful — BUKAN Static (crash di RAG)
+        return _ragErrorResult(); // graceful (BUKAN Static — crash di RAG)
       }
     }
-    var reply = (d && d.reply) || '';
     if (!reply) return _ragErrorResult();
-    if (opts && typeof opts.onChunk === 'function') opts.onChunk(reply);
-    // Bentuk kompatibel simulator.jsx lama. Scoring RAG = post-session
-    // Evaluator (kontrak §3A).
+    // Bentuk kompatibel simulator.jsx. Scoring RAG = post-session
+    // Evaluator (kontrak §3A). Note: onChunk SUDAH dipanggil per chunk
+    // selama stream — di sini tidak panggil lagi.
     return {
       category: 'default',
       responseData: { text: reply, found: null, isRedFlag: false },
       reply: reply,
       detectedDomain: null,
-      audioUrl: (d && d.audioUrl) || null,
+      audioUrl: null,
     };
   },
 };
@@ -176,3 +265,4 @@ window.RagPatientEngine = RagPatientEngine;
 window.createPatientEngine = createPatientEngine;
 window.getRagSessionId = getRagSessionId;
 window.PatientEngine = PatientEngine;
+window.closeRagWs = closeRagWs;
