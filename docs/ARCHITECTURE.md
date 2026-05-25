@@ -1,12 +1,13 @@
 # OphthaSim — Architecture & Contract (Single Source of Truth)
 
-> **STATUS:** Fase 1–2 selesai · Fase 3 berjalan (RAG core OK, LLM nyata
-> aktif) · cutover frontend bertahap (C1) · **Exam Simulator DICABUT dari
-> flow (v0.11.0, keputusan user)** — file disimpan dorman, tak di-wire.
-> **Flow kanonik: Anamnesis → DDx → Rencana Tatalaksana → Debrief (narasi
-> LLM).** Dokumen ini **sumber kebenaran tunggal** yang
-> menjembatani semua chat session.
-> Versi: `0.12.0` · Terakhir diubah: 2026-05-17
+> **STATUS:** **LIVE** di https://ophtasim.duckdns.org (AWS EC2 Sydney,
+> HTTPS+HTTP/2). Streaming token-by-token aktif (Tier A v0.13.0). Flow:
+> **Anamnesis → DDx → Rencana Tatalaksana → Debrief (narasi LLM)**.
+> Exam Simulator dorman (v0.11.0 keputusan user). Voice (Groq/ElevenLabs)
+> belum diaktifkan — degradasi mulus, arsitektur sudah siap.
+> Dokumen ini **sumber kebenaran tunggal** yang menjembatani semua chat
+> session.
+> Versi: `0.13.0` · Terakhir diubah: 2026-05-19
 
 ---
 
@@ -516,6 +517,46 @@ Default dipakai sampai diputuskan lain (backend-plan §11):
 
 ## 10. Changelog kontrak
 
+- `0.13.0` (2026-05-19): **Tier A — streaming near-real-time + deploy
+  produksi AWS EC2 + HTTPS.** Pemenuhan kontrak (§3 `onChunk`/streaming
+  + §6 WS protokol) yg sebelumnya belum dieksekusi di frontend; bukan
+  kontrak baru. **(a) Streaming WebSocket end-to-end:** `RagPatientEngine.respond`
+  rewire dari REST `/turns` non-stream → WS persistent per-sesi
+  (`_ensureWs`/`_sendOverWs`/`closeRagWs`) + FIFO queue + `onChunk`
+  callback per token. Re-auth+retry pada token kadaluarsa/sesi mati tetap.
+  `simulator.jsx handleSendStable`: push placeholder patient msg
+  `{streaming:true, text:''}` atomik bersamaan user msg → anchor visual
+  instan; `onChunk` update text by-id incremental; finalize pada resolve
+  (`streaming:false`). Buang `setTimeout 1100-1700ms` artificial — pakai
+  TTFT nyata. `MessageBubble`: dot inline saat `streaming && !text`
+  (precedent ChatGPT/Claude), gantikan `TypingIndicator` bubble terpisah
+  (simbol tetap export). `ConversationPanel`: derived `isStreaming`
+  gantikan local `typing` state; disable input/tombol/mic. Auto-speak
+  hook gated `!last.streaming` (TTS dipanggil sekali pada teks final →
+  **voice-ready**: saat key TTS diisi nanti, tak perlu code change).
+  `SimulatorScreen`: `useEffect` cleanup `window.closeRagWs()` saat
+  unmount. **(b) Backend `max_tokens` cap** (config-driven, back-compat):
+  `llm_persona_max_tokens=220`, `llm_judge_max_tokens=1200`. Param
+  opsional di `LlmClient` Protocol + `_OAI`/`_Anth` impl; `engine.respond`/
+  `stream_respond` teruskan persona cap; `evaluator.judge` pakai judge
+  cap. Tail latency turun ~30–50%. **(c) nginx Tier A** (`deploy/`):
+  template `nginx-ophtha.conf` `proxy_read_timeout 600s`, `Connection
+  $connection_upgrade`; file baru `deploy/nginx-upgrade-map.conf` (map
+  `$http_upgrade` di `/etc/nginx/conf.d/`); `setup.sh` deploy map + warn
+  jika blok 443 ada tanpa WS headers; **`http2 on;` di blok 443** via
+  sed patch post-certbot. **(d) Deploy produksi (AWS EC2):** Ubuntu
+  Server 26.04 t3.small di `ap-southeast-2` (Sydney), Elastic IP
+  `3.106.144.105`, domain DuckDNS `ophtasim.duckdns.org`, Let's Encrypt
+  via certbot, HTTPS+HTTP/2 aktif (terverifikasi `curl -I` → HTTP/2 200,
+  `/health` 200, streaming WS live via DevTools). Tetap pakai DeepSeek
+  (`deepseek/deepseek-v4-flash` via OpenRouter — zero quality risk).
+  ACCESS_TOKEN_MINUTES=720 (12h) untuk demo nyaman. **Verified:** pytest
+  56 passed, build hijau, `design.css` byte-identical, **CSS hash TETAP
+  `index-Bj97HpXF.css`** (§8.1 utuh). **Pending eksplisit:** voice STT
+  (Groq) + TTS (ElevenLabs) keys belum diisi di server `.env` →
+  mic/TTS off, degradasi mulus (UI mic hidden, `speak()` silent-fail);
+  aktifkan = tinggal append env vars + `systemctl restart`. Tier B
+  (Groq Nitro model, prompt caching) sebagai opsi optimasi berikut.
 - `0.12.0` (2026-05-17): **Debrief narasi LLM + skor menilai DDx & Rencana
   Tatalaksana; perbaikan bug pasien-kosong; Skill Heatmap & rata-rata
   nilai profil.** **(a) Bug-fix pasien tak menjawab:** akar = token akses
