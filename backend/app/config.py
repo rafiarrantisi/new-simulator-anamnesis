@@ -69,6 +69,18 @@ class Settings(BaseSettings):
     rate_limit_ai: int = 30        # /api/ai|scoring per user per menit
     rate_limit_window_sec: int = 60
 
+    # ── Developer Dashboard (v0.15.0) ──
+    # Akun admin = 1 super-admin hardcoded di .env (keputusan kontrak v0.15.0
+    # K9). Saat startup, lifespan() seed user ini dgn role='admin' bila belum
+    # ada. Idempoten — kalau user ada tapi role!=admin, JANGAN auto-promote
+    # (safety: cegah privilege escalation tak sengaja).
+    # Hash bcrypt: generate via `python -m scripts.hash_admin_password`.
+    admin_email: str = ""
+    admin_password_hash: str = ""
+    # Upload dir utk eye photos (& kelak konten admin lain). Prod default
+    # `/opt/ophtha/uploads`; dev override ke `./uploads` lewat .env.
+    upload_dir: str = "./uploads"
+
     def stt_base(self) -> str:
         return self.stt_base_url or self.llm_base_url
 

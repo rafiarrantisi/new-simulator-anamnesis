@@ -29,6 +29,13 @@ sistemnya/src/
 # Generated voice samples (bukan sumber)
 backend/tts-samples/
 
+# v0.15.0 — uploads runtime (foto binary dashboard, bukan source)
+backend/uploads/
+data-kasus/.history/
+
+# Claude Code worktree internal
+.claude/
+
 # OS / editor
 .DS_Store
 Thumbs.db

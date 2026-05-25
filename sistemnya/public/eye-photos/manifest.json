@@ -1,0 +1,10 @@
+{
+  "_help": "Hapus _help bila perlu. Mapping caseId → array foto. caseId ikuti kanonik 'kasus-02' atau dummy lama 'case-001'. Lihat README.md di folder ini.",
+  "_example_kasus-02": [
+    {
+      "src": "kasus-02-anterior.jpg",
+      "caption": "Segmen anterior — hifema 3mm",
+      "eye": "OD"
+    }
+  ]
+}

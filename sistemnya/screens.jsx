@@ -50,6 +50,17 @@ const AppHeader = ({ onNav, screen, onSettings, profile, badges, auth, onLogout 
             fontFamily: 'Poppins',
           }}>{l}</button>
         ))}
+        {/* v0.15.0: tombol Dev hanya utk admin. ADITIF, sama pola dgn tombol
+            di atas (CSS var existing) — design.css TIDAK tersentuh. */}
+        {auth?.role === 'admin' && (
+          <button onClick={() => onNav('dev-dashboard')} style={{
+            padding: '6px 14px', borderRadius: 10, border: 'none',
+            background: screen === 'dev-dashboard' ? 'var(--primary-l)' : 'transparent',
+            color: screen === 'dev-dashboard' ? 'var(--primary)' : 'var(--text-2)',
+            fontSize: 13, fontWeight: screen === 'dev-dashboard' ? 700 : 500,
+            cursor: 'pointer', transition: 'all 0.18s ease', fontFamily: 'Poppins',
+          }} title="Developer Dashboard">🛠 Dev</button>
+        )}
       </nav>
 
       {/* Right side */}

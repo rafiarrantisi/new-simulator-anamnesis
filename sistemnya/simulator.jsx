@@ -600,6 +600,10 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
       {/* Patient card header */}
       <PatientCard caseData={caseData} sessionTime={session.elapsed} />
 
+      {/* v0.14.0: Eye Photo Viewer — auto-hidden bila caseId belum punya
+          entry di public/eye-photos/manifest.json (zero visual change). */}
+      <EyePhotoBar caseId={caseData.id} />
+
       {/* Messages area */}
       <div style={{
         flex: 1, overflowY: 'auto', padding: '20px 24px',

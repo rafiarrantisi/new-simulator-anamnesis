@@ -488,6 +488,16 @@
                 />
               )}
 
+              {/* v0.15.0: Developer Dashboard. Visible HANYA utk admin.
+                  Gating: AppHeader filter tombol + DeveloperDashboardScreen
+                  cek /api/admin/whoami (defense-in-depth). */}
+              {screen === 'dev-dashboard' && (
+                <DeveloperDashboardScreen
+                  auth={auth}
+                  navigate={navigate}
+                />
+              )}
+
               {screen === 'simulator' && currentCase && (
                 <SimulatorScreen
                   key={`sim-${currentCase.id}-${screenKey}`}

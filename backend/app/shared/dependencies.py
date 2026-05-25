@@ -25,3 +25,15 @@ def get_current_user(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Gate admin endpoints (kontrak v0.15.0 Developer Dashboard).
+
+    Cek `role == 'admin'` DARI DB (bukan JWT claim) supaya token lama tetap
+    valid sampai expired, tapi privilege ditentukan real-time. Akun admin =
+    seed dari .env `ADMIN_EMAIL`+`ADMIN_PASSWORD_HASH` saat startup.
+    """
+    if user.role != "admin":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
+    return user

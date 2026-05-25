@@ -3,11 +3,15 @@
 > **STATUS:** **LIVE** di https://ophtasim.duckdns.org (AWS EC2 Sydney,
 > HTTPS+HTTP/2). Streaming token-by-token aktif (Tier A v0.13.0). Flow:
 > **Anamnesis → DDx → Rencana Tatalaksana → Debrief (narasi LLM)**.
+> Eye Photo Viewer aktif (v0.14.0) — tombol "👁 Lihat Kondisi Mata"
+> di header anamnesis muncul saat kasus punya foto. Developer Dashboard
+> (v0.15.0) aktif — login admin via .env, kelola kasus + upload foto
+> realtime tanpa rebuild.
 > Exam Simulator dorman (v0.11.0 keputusan user). Voice (Groq/ElevenLabs)
 > belum diaktifkan — degradasi mulus, arsitektur sudah siap.
 > Dokumen ini **sumber kebenaran tunggal** yang menjembatani semua chat
 > session.
-> Versi: `0.13.0` · Terakhir diubah: 2026-05-19
+> Versi: `0.15.0` · Terakhir diubah: 2026-05-25
 
 ---
 
@@ -417,6 +421,41 @@ tak boleh over-constrained, tetap tervalidasi schema (Pydantic).
   **session-gated** (§6); progressive-disclosure per-station (plan §4.3)
   = increment terjadwal, bukan dump sekaligus.
 
+### 5.10 `EyePhoto` & `AdminAuditLog` (v0.15.0 Developer Dashboard)
+
+**`EyePhoto`** — metadata foto mata per kasus (binary di filesystem):
+```
+EyePhoto {
+  id (UUID), case_id (str, soft FK ke cases.case_id, indexed),
+  filename (str, unique — UUID + ext, anti-collision),
+  caption (str), eye ('OD'|'OS'|'OU'|''), ord (int, urutan carousel),
+  uploaded_at (ts), uploaded_by (FK users.id, nullable)
+}
+```
+- Binary di-serve via `/api/uploads/eye-photos/{filename}` (FastAPI
+  StaticFiles, mounted di bawah `/api/*` → nginx proxy existing).
+- Frontend viewer (eye-photo.jsx) fetch via `GET /api/cases/{caseId}/eye-photos`
+  → array `{id, caseId, src, caption, eye, ord, uploaded_at}`. Format
+  kompatibel dgn manifest.json legacy (back-compat: manifest tetap
+  dipakai sbg fallback bila `OPHTHA_API_BASE` kosong).
+- **Anti-cheat content** = honor system (panduan README), bukan
+  cryptographic. Foto yg langsung ekspos diagnosis sebaiknya tidak
+  dipakai. Kalau perlu gating, bisa di-extend ke session-gated (analog
+  §5.9) — tunda sampai sinyal.
+
+**`AdminAuditLog`** — forensik mutation:
+```
+AdminAuditLog {
+  id, user_id (FK users.id, indexed), action (str, indexed,
+  mis. 'case_create' | 'case_edit' | 'case_reingest' | 'photo_upload' |
+  'photo_delete'),
+  target_type (str, mis. 'case' | 'photo'), target_id (str),
+  diff_summary (JSON), ts (indexed)
+}
+```
+Best-effort write (gagal log != gagal action). V1 hanya endpoint baca
+(`GET /api/admin/audit`); UI viewer terjadwal v2.
+
 ---
 
 ## 6. KONTRAK — Backend API (Fase 2; penamaan disatukan)
@@ -447,6 +486,16 @@ Semua skema multi-tenant: `institution_id` ada di schema sejak hari 1.
 | POST | `/api/sessions/{id}/exam` | Submit `StudentExamRecord` §3B.2 → skor deterministik |
 | GET | `/api/sessions/{id}/exam-report` | `ExamScoringReport` §3B.2 (setelah submit) |
 | GET | `/api/analytics/*` | Fase 2+ (dashboard dosen) |
+| GET | `/api/cases/{caseId}/eye-photos` | **v0.14.0** (public) list foto mata; dipakai EyePhotoBar viewer |
+| GET | `/api/admin/whoami` | **v0.15.0 admin** (require_admin) — verifikasi role + email |
+| GET | `/api/admin/cases` | **admin** — list semua kasus (termasuk inactive) + photoCount + hasMarkdown |
+| GET/POST | `/api/admin/cases` `/{caseId}` | **admin** — get detail (raw markdown) + create baru (tulis ke `data-kasus/{caseId}.md`) |
+| PATCH | `/api/admin/cases/{caseId}` | **admin** — edit metadata + body; auto-backup ke `data-kasus/.history/` |
+| POST | `/api/admin/cases/{caseId}/ingest` | **admin** — re-ingest 1 kasus (sync) |
+| GET/POST | `/api/admin/eye-photos` | **admin** — list/upload (multipart) foto mata |
+| PATCH/DELETE | `/api/admin/eye-photos/{id}` | **admin** — edit caption/eye/ord; delete (file + DB row) |
+| GET | `/api/admin/audit` | **admin** — forensik log (paginated) |
+| GET | `/api/uploads/eye-photos/{filename}` | **StaticFiles** — binary foto, mounted via FastAPI (nginx existing proxy `^/(api|health)` → uvicorn, zero config change) |
 
 **Protokol WebSocket `/api/sessions/{id}/ws`:**
 - in: `{type:'text', text}` atau `{type:'audio', audio}`
@@ -512,11 +561,124 @@ Default dipakai sampai diputuskan lain (backend-plan §11):
 | K5 | ExamFindings extraction | Default: sidecar `_exam/` draf manual asisten + review dokter. LLM-assisted extraction (plan §4.2) = tooling admin terjadwal |
 | K6 | Exam-sim FE↔backend cutover | `ApiExamEngine` seam siap; cutover bertahap (pola C1) + verifikasi browser, **ditunda** sampai station inti jalan |
 | K7 | Komposisi skor sesi total (anamnesis+DDx+exam) | **Belum diputuskan.** `ExamScoringReport` tetap terpisah dari `EvaluationReport` §3A sampai diputuskan (plan §1.1 usul 40/20/40 — perlu gate dokter) |
+| K8 | Sync dashboard → git (v0.15.0): edit kasus via dashboard menulis langsung ke `data-kasus/{caseId}.md` server, tapi tak auto-commit ke git | **v1: MANUAL.** User responsibility: pull file dari server (mis. `scp` / cat di SSH), commit, push. Audit log + `.history/` backup utk forensik. **v2 opsional:** auto-commit ke branch `dashboard-edits` lewat GitPython, PR otomatis ke main. Tunda sampai user merasa friction nyata. |
+| K9 | Admin authentication (v0.15.0): single super-admin via `.env` (ADMIN_EMAIL+ADMIN_PASSWORD_HASH) vs role-DB UI | **v1: hardcoded .env single admin.** Solo developer use case. Multi-admin / promote-from-UI tunda sampai ada >1 user yg butuh akses. `_seed_admin_user` idempoten; existing user dgn role!=admin NO auto-promote (safety). |
 
 ---
 
 ## 10. Changelog kontrak
 
+- `0.15.0` (2026-05-25): **Developer Dashboard — admin CMS internal.**
+  Tujuan: developer (solo) bisa kelola konten (kasus + foto mata) via UI
+  tanpa SSH/git per perubahan. Engine kontrak (§3/§3A/§4) **tak tersentuh**;
+  ini admin layer di atas + UI screen baru. **(a) Admin auth (§9 K9):**
+  single super-admin via `.env` (`ADMIN_EMAIL`+`ADMIN_PASSWORD_HASH`).
+  Startup `_seed_admin_user` (lifespan) — idempoten: user belum ada →
+  insert role='admin'; user ada tapi role!=admin → log warning, **TIDAK
+  auto-promote** (safety). Helper CLI `scripts/hash_admin_password.py`
+  generate bcrypt hash. Dependency baru `require_admin()` di
+  `shared/dependencies.py` — gate 403 utk non-admin. **(b) Admin
+  endpoints case mgmt** (`§6`): `POST/PATCH /api/admin/cases` (tulis
+  langsung ke `data-kasus/{caseId}.md` server + auto-backup ke
+  `.history/{caseId}-{ISO}.md` + re-parse + upsert CaseRegistry +
+  audit log); `POST /{id}/ingest` (re-ingest sync via `pipeline.parser`+
+  `registry.upsert_case`); `GET /api/admin/cases` (list semua + photoCount
+  + hasMarkdown + status). Validasi: caseId pola `kasus-XX` saja (dummy
+  legacy `case-00X` tetap di frontend, tak via dashboard); markdown
+  divalidasi parser (≥1000 char, Bagian A 8+ section, Bagian B ada).
+  **(c) Eye photos backend** (`domains/eye_photos/`): model
+  `EyePhoto` (§5.10) + endpoint upload multipart (whitelist
+  jpg/jpeg/png/webp/gif, max 8MB, filename UUID anti-traversal) + delete
+  + public list per-caseId. FastAPI `StaticFiles` mount di
+  `/api/uploads/eye-photos/` — nginx existing proxy `^/(api|health)`
+  route otomatis, **zero nginx config change**. **(d) Audit log**
+  (`domains/admin/`): tabel `AdminAuditLog` (§5.10) + endpoint
+  `GET /api/admin/audit` paginated + `GET /whoami`. Best-effort write
+  di service mutation (gagal log != gagal action). **(e) Alembic
+  migration** `c2e8b91d4f10_eye_photos_and_admin_audit.py` — non-breaking
+  CREATE TABLE saja. **(f) Frontend dashboard** `sistemnya/dev-dashboard.jsx`
+  (~700 lines, komponen baru): screen `DeveloperDashboardScreen` dgn 2 tab
+  (Kasus / Foto Mata). `CaseAdminTable` (filter all/active/disabled, sort,
+  toggle isActive, ✏ edit, 🔄 re-ingest), `CaseEditorModal` hybrid (form
+  metadata + textarea markdown body, warning banner utk kasus kanonik
+  01-22), `EyePhotoAdminGrid` (per-kasus card + count), `EyePhotoEditorModal`
+  (drag-drop upload, list+delete, refresh cache `invalidateEyePhotosCache`).
+  Reuse komponen existing (Btn/Card/Overlay/LoadingDots/SectionHeader/
+  useToast) + token CSS var; **ZERO design.css baru** (invarian §8.1).
+  **(g) Wire**: `screens.jsx` AppHeader +1 tombol "🛠 Dev" conditional
+  `auth?.role==='admin'`; inline App routing +1 screen `dev-dashboard`;
+  `bundle-legacy.mjs` LOAD_ORDER += `dev-dashboard.jsx`. **(h) Eye-photo
+  viewer refactor** (`eye-photo.jsx` v0.14.0): loader API-first dgn
+  fallback manifest — `__loadEyePhotosForCase(caseId)` fetch dari
+  `/api/cases/{caseId}/eye-photos` bila API base set, else manifest.json
+  legacy. Per-caseId cache 30 detik. Export `invalidateEyePhotosCache`
+  utk dashboard refresh. **(i) Deploy**: `setup.sh` extend (mkdir uploads
+  + `.history`, chown), `env.server.example` template `ADMIN_EMAIL/HASH/
+  UPLOAD_DIR`. **Verified**: pytest **70 passed, 1 skipped** (56 baseline
+  + 14 baru di `test_admin_dashboard.py`: require_admin gating
+  403/401, whoami, case CRUD success/conflict/invalid, reingest, photo
+  upload multipart admin-only/list/delete/reject-non-image, audit log
+  populated). `npm run build` hijau, no warning. **CSS hash TETAP
+  `index-Bj97HpXF.css`** (§8.1 utuh), `git diff sistemnya/design.css`
+  kosong. App imports OK 38 routes (Tambah +11 admin endpoints).
+  **Konten klinis**: kasus baru/edit = **draf user**, **validasi dokter**
+  tetap wajib (asisten tidak generate konten klinis lewat dashboard).
+  Edit kasus kanonik (01-22) explicit accept user dgn warning banner UI
+  + auto-backup `.history/` + audit log + manual git sync (§9 K8).
+  **Pending eksplisit** (terjadwal): (1) Sync dashboard → git auto
+  (v2 opsional, §9 K8); (2) Audit log UI viewer (v2, endpoint sudah
+  ada); (3) Edit sidecar disclosure/exam via dashboard (v2 setelah
+  pola stabil); (4) Stats user & sesi analytics (v2, butuh agregasi
+  baru); (5) User mgmt UI promote-role (v2 saat butuh >1 admin).
+  **Batas verifikasi jujur**: aku verifikasi backend pytest + build +
+  invariants; runtime UI dashboard (drag-drop, modal, toggle filter)
+  butuh user buka browser dgn admin login + 1-2 contoh kasus/foto.
+- `0.14.0` (2026-05-25): **Eye Photo Viewer (fitur UI aditif).** Selama
+  sesi anamnesis, dokter mahasiswa bisa lihat foto mata pasien per
+  kasus — mereplikasi inspeksi visual yang dilakukan dokter mata di
+  klinik nyata (tidak hanya menebak dari percakapan). **Bukan perubahan
+  kontrak engine** (§3/§3A/§4/§6 tak tersentuh); murni asset display +
+  komponen UI baru. **(a) Storage**: `sistemnya/public/eye-photos/`
+  (Vite public dir → dilayani nginx via `dist/eye-photos/`) +
+  `manifest.json` mapping `caseId → [{src,caption?,eye?}]`. Format
+  fleksibel: dukung relative file (`kasus-02-anterior.jpg`) atau URL
+  eksternal; eye chip OD/OS/OU opsional. Manifest kosong default →
+  zero perilaku berubah. **(b) Komponen baru** `sistemnya/eye-photo.jsx`
+  (file aditif): `__loadEyePhotosManifest()` lazy+cached single-flight;
+  `<EyePhotoBar caseId>` strip kecil di bawah `<PatientCard/>` dgn
+  tombol "👁 Lihat Kondisi Mata" — auto-hidden bila kasus belum punya
+  foto (return `null` → zero visual change); `<EyePhotoModal photos
+  onClose>` overlay full-screen dgn carousel (←/→ keys), counter
+  `i/n`, caption + eye chip, ESC/klik-luar utk tutup. Pakai komponen
+  `Overlay`/`Btn`/`LoadingDots` existing + token CSS var existing.
+  **(c) Wire**: `build/bundle-legacy.mjs` LOAD_ORDER += `eye-photo.jsx`
+  (setelah `components.jsx`, sebelum `simulator.jsx`); `simulator.jsx`
+  ConversationPanel +1 baris aditif `<EyePhotoBar caseId={caseData.id}/>`
+  setelah `<PatientCard/>` (pola sama dgn tombol mic v0.8.1 — aditif,
+  bukan ubah komponen existing). **(d) Anti-bocor**: foto sebaiknya
+  bukan yg langsung menunjukkan diagnosis (panduan di README folder);
+  kalau perlu gating per-kasus, bisa diangkat ke backend session-gated
+  endpoint nanti (analog §5.9 _exam — tunda sampai ada signal). **(e)
+  Coverage caseId**: dukung both kanonik (`kasus-XX`) & dummy lama
+  (`case-001`) — map literal di manifest, fleksibel. **(f) UX flow**:
+  tombol hanya di anamnesis ConversationPanel (sesuai dgn alur klinis
+  "dokter lihat mata pasien selama wawancara"); DDx/Tatalaksana tidak
+  ditampilkan utk MVP — bisa diangkat nanti bila dokter request.
+  **Verified**: `npm run build` hijau · **CSS hash TETAP
+  `index-Bj97HpXF.css`** (§8.1 utuh) · `git diff sistemnya/design.css`
+  kosong · pytest backend tak tersentuh (56 passed tetap berlaku).
+  **Konten klinis (foto)**: **draf user**, **validasi dokter** —
+  asisten **TIDAK** menyediakan foto. User isi file + edit manifest;
+  panduan di `sistemnya/public/eye-photos/README.md`. **Pending
+  eksplisit** (terdokumentasi, bukan utang tersembunyi): (1) user isi
+  foto + manifest entry per kasus; (2) bila dokter request, perluas
+  tombol ke DDx/Tatalaksana screen; (3) bila ada kasus dgn foto yg
+  langsung ekspos diagnosis, pertimbangkan backend gating atau
+  blur/disclosure progressive — saat ini "honor system" lewat panduan
+  README. **Batas verifikasi jujur**: aku verifikasi build + struktur
+  + tak menyentuh design.css; **runtime UI** (tombol muncul di browser,
+  modal carousel, ESC handler, fit foto besar/kecil) = perlu user
+  buka browser dgn manifest terisi minimal 1 entry + foto demo.
 - `0.13.0` (2026-05-19): **Tier A — streaming near-real-time + deploy
   produksi AWS EC2 + HTTPS.** Pemenuhan kontrak (§3 `onChunk`/streaming
   + §6 WS protokol) yg sebelumnya belum dieksekusi di frontend; bukan

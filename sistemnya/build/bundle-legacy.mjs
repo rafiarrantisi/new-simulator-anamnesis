@@ -35,6 +35,10 @@ const LOAD_ORDER = [
   'engine/evaluation-bridge.js',
   'engine/voice-engine.js',
   'components.jsx',
+  // v0.14.0: Eye Photo Viewer (ADITIF UI). Setelah components.jsx (butuh
+  // Overlay/Btn/LoadingDots dari window) & sebelum simulator.jsx yang
+  // me-render <EyePhotoBar/> di ConversationPanel.
+  'eye-photo.jsx',
   'onboarding.jsx',
   'screens.jsx',
   'simulator.jsx',
@@ -53,6 +57,10 @@ const LOAD_ORDER = [
   'auth-screens.jsx',
   'profile-features.jsx',
   'learning-extras.jsx',
+  // v0.15.0: Developer Dashboard (admin-only). Setelah components.jsx
+  // (butuh Btn/Card/Overlay/LoadingDots/SectionHeader/useToast) & terakhir
+  // (tak depend file lain).
+  'dev-dashboard.jsx',
 ];
 
 const HTML_FILE = 'Virtual Patient Simulator.html';

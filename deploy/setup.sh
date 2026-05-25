@@ -52,6 +52,14 @@ sudo -u "$RUN_USER" bash -c "
   ./.venv/bin/pip install -q -r requirements.txt
 "
 
+echo ">> [3b/8] v0.15.0 Developer Dashboard — provisioning folder upload + history"
+UPLOAD_DIR="${UPLOAD_DIR:-/opt/ophtha/uploads}"
+HISTORY_DIR="$APP_DIR/data-kasus/.history"
+mkdir -p "$UPLOAD_DIR/eye-photos" "$HISTORY_DIR"
+chown -R "$RUN_USER:$RUN_USER" "$UPLOAD_DIR" "$HISTORY_DIR"
+chmod 755 "$UPLOAD_DIR" "$UPLOAD_DIR/eye-photos" "$HISTORY_DIR"
+echo "   uploads → $UPLOAD_DIR/eye-photos ; history → $HISTORY_DIR"
+
 echo ">> [4/8] cek backend/.env"
 if [[ ! -f "$APP_DIR/backend/.env" ]]; then
   cp "$APP_DIR/deploy/env.server.example" "$APP_DIR/backend/.env"
