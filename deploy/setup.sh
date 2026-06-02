@@ -100,18 +100,32 @@ cp "$APP_DIR/deploy/nginx-upgrade-map.conf" /etc/nginx/conf.d/upgrade-map.conf
 # + proxy_read_timeout panjang ada juga di blok HTTPS (certbot kadang
 # tak menyalin custom proxy directives saat menambah listen 443 ssl).
 SITE=/etc/nginx/sites-available/ophtha.conf
-if grep -q "listen 443 ssl" "$SITE" 2>/dev/null && \
-   ! grep -q "proxy_read_timeout 600s" "$SITE" 2>/dev/null; then
-  echo "!! Blok 443 ada tapi belum punya WS headers/timeout panjang."
-  echo "!! Edit MANUAL: tambahkan di location ~ ^/(api|health) blok 443:"
-  echo "      proxy_http_version 1.1;"
-  echo "      proxy_set_header Upgrade \$http_upgrade;"
-  echo "      proxy_set_header Connection \$connection_upgrade;"
-  echo "      proxy_read_timeout 600s;  proxy_send_timeout 600s;"
-  echo "      http2 on;     # di server-level blok 443"
+# ── SELF-HEALING HTTPS (penting!) ──────────────────────────────────────────
+# nginx-ophtha.conf = template HTTP-only (listen 80). certbot-lah yg menambah
+# blok `listen 443 ssl`. Karena baris di atas MENIMPA $SITE dgn template HTTP,
+# blok 443 dari certbot hilang tiap setup.sh dijalankan ulang. Bila cert
+# Let's Encrypt sudah ada utk domain ini → RE-APPLY certbot (pakai cert
+# existing, TANPA terbitkan baru) supaya HTTPS balik otomatis.
+if [[ -d "/etc/letsencrypt/live/$DOMAIN" ]] && ! grep -q "listen 443 ssl" "$SITE" 2>/dev/null; then
+  echo ">> [https] Cert terdeteksi tapi blok 443 hilang (akibat overwrite). Re-apply certbot…"
+  if command -v certbot >/dev/null 2>&1; then
+    certbot --nginx -d "$DOMAIN" --redirect -n --keep-until-expiring --agree-tos \
+      ${CERTBOT_EMAIL:+-m "$CERTBOT_EMAIL"} \
+      || echo "!! certbot re-apply GAGAL — jalankan manual: sudo certbot --nginx -d $DOMAIN --redirect"
+    # http2 (opsional) di blok 443 — abaikan bila sed tak menemukan pola.
+    sed -i 's/listen 443 ssl;/listen 443 ssl;\n    http2 on;/' "$SITE" 2>/dev/null || true
+  else
+    echo "!! certbot tak terpasang. Install: sudo apt-get install -y certbot python3-certbot-nginx"
+    echo "!! lalu: sudo certbot --nginx -d $DOMAIN --redirect"
+  fi
 fi
 nginx -t
 systemctl reload nginx
+# Peringatan terakhir bila 443 tetap tak ada (cert belum pernah dibuat).
+if ! grep -q "listen 443 ssl" "$SITE" 2>/dev/null; then
+  echo "!! CATATAN: situs hanya HTTP (port 80). Untuk HTTPS jalankan:"
+  echo "!!   sudo certbot --nginx -d $DOMAIN --redirect -m EMAIL --agree-tos"
+fi
 
 echo ">> [8/8] systemd backend service"
 sed -e "s|__APP_DIR__|$APP_DIR|g" -e "s|__RUN_USER__|$RUN_USER|g" \
