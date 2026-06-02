@@ -638,6 +638,7 @@ const CaseLibraryScreen = ({ onStartCase, completedCaseIds, onBuildCase, favorit
   const [diff, setDiff]         = React.useState('All');       // 'All' | 'Easy' | 'Medium' | 'Hard'
   const [favOnly, setFavOnly]   = React.useState(false);
   const [hovered, setHovered]   = React.useState(null);
+  const toast = useToast();
 
   // All cases matching stage + caseType (before difficulty/favorite filter)
   const inBucket = React.useMemo(() => CASES.filter(c =>
@@ -771,19 +772,46 @@ const CaseLibraryScreen = ({ onStartCase, completedCaseIds, onBuildCase, favorit
           {visible.map((c, i) => {
             const isComplete = completedCaseIds.includes(c.id);
             const isFav      = favoriteCaseIds.includes(c.id);
-            const isHov      = hovered === c.id;
+            const locked     = !!c.locked;
+            const isHov      = !locked && hovered === c.id;
+            // v0.16.0: kasus terkunci → overlay + lock badge, klik = toast
+            // (tak navigate). Kasus aktif → perilaku lama persis.
+            const onLockedClick = () => toast.show(
+              'Kasus ini masih terkunci. Fokus ke kasus preklinik dulu — batch lanjutan menyusul.',
+              'info'
+            );
             const common = {
               c, isComplete, isHov,
-              onMouseEnter: () => setHovered(c.id),
+              onMouseEnter: () => { if (!locked) setHovered(c.id); },
               onMouseLeave: () => setHovered(null),
-              onClick: () => onStartCase(c),
+              onClick: locked ? onLockedClick : () => onStartCase(c),
             };
             return (
-              <div key={c.id} className={`au d${Math.min(i+1, 6)}`}>
-                {isOsce
-                  ? <OsceCaseCard {...common} />
-                  : <PracticeCaseCard {...common} isFav={isFav} onToggleFavorite={onToggleFavorite} />
-                }
+              <div key={c.id} className={`au d${Math.min(i+1, 6)}`} style={{ position: 'relative' }}>
+                {locked && (
+                  <div
+                    onClick={onLockedClick}
+                    style={{
+                      position: 'absolute', inset: 0, zIndex: 3,
+                      borderRadius: 22, cursor: 'not-allowed',
+                      background: 'rgba(245,247,255,0.35)',
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end',
+                      padding: 14,
+                    }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      fontSize: 11, fontWeight: 800, color: 'var(--text-2)',
+                      background: 'var(--surface)', border: '1px solid var(--border)',
+                      padding: '5px 11px', borderRadius: 999, boxShadow: 'var(--sh-sm)',
+                    }}>🔒 Terkunci</span>
+                  </div>
+                )}
+                <div style={locked ? { filter: 'grayscale(0.85)', opacity: 0.55, pointerEvents: 'none' } : null}>
+                  {isOsce
+                    ? <OsceCaseCard {...common} />
+                    : <PracticeCaseCard {...common} isFav={isFav} onToggleFavorite={onToggleFavorite} />
+                  }
+                </div>
               </div>
             );
           })}

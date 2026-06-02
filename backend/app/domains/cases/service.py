@@ -212,6 +212,7 @@ def reingest_case(db: Session, case_id: str, *, user_id: str | None = None) -> C
 _METADATA_FIELDS = {
     "title_id", "title_en", "icd10", "skdi", "organ_system",
     "difficulty", "tags", "references", "stage", "case_type", "is_active",
+    "locked",  # v0.16.0
 }
 
 
@@ -243,6 +244,7 @@ def list_admin(db: Session, photo_counts: dict[str, int] | None = None) -> list[
             "stage": c.stage or None,
             "caseType": c.case_type or None,
             "isActive": c.is_active,
+            "locked": bool(getattr(c, "locked", False)),
             "hasDisclosureLayers": c.has_disclosure_layers,
             "chunkCount": c.chunk_count,
             "photoCount": photo_counts.get(c.case_id, 0),
@@ -281,6 +283,7 @@ def get_admin(db: Session, case_id: str) -> dict:
         "stage": row.stage or None,
         "caseType": row.case_type or None,
         "isActive": row.is_active,
+        "locked": bool(getattr(row, "locked", False)),
         "hasDisclosureLayers": row.has_disclosure_layers,
         "chunkCount": row.chunk_count,
         "content": content,  # raw markdown

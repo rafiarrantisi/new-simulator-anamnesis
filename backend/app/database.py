@@ -46,3 +46,25 @@ def init_db() -> None:
     from app.domains.sessions import models as _sessions  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_runtime_columns()
+
+
+def _ensure_runtime_columns() -> None:
+    """Tambah kolom baru secara idempoten utk jalur create_all (live sqlite
+    bootstrap TIDAK menjalankan Alembic, dan create_all tak meng-ALTER tabel
+    yang sudah ada). Tiap statement diisolasi — gagal (kolom sudah ada) =
+    di-skip. Alembic tetap sumber kebenaran migrasi utk Postgres/prod.
+
+    v0.16.0: cases.locked.
+    """
+    from sqlalchemy import text
+
+    stmts = [
+        "ALTER TABLE cases ADD COLUMN locked BOOLEAN DEFAULT 0",
+    ]
+    for s in stmts:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(s))
+        except Exception:
+            pass  # kolom sudah ada — aman diabaikan

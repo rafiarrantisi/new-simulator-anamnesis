@@ -1,11 +1,20 @@
 # HANDOFF — Onboarding Sesi Baru
 
-> Baca **`docs/ARCHITECTURE.md`** (v0.15.0) DULU = kontrak & sumber kebenaran
+> Baca **`docs/ARCHITECTURE.md`** (v0.16.0) DULU = kontrak & sumber kebenaran
 > tunggal (data model, API, roadmap, semua keputusan di Changelog).
 > Dokumen ini hanya **runbook + status + konvensi** yang tidak ada di sana.
 > Jangan menurunkan-ulang keputusan; ikuti changelog.
 
-## 1. Status singkat (per v0.15.0 — Developer Dashboard)
+## 1. Status singkat (per v0.16.0 — kasus preklinik + lock + chat ramping)
+
+- **Kasus aktif = 9 preklinik PPK Kemenkes** (dosen/dokter approved):
+  `kasus-101..109` (dry-eye, buta-senja, hordeolum, konjungtivitis-bakteri,
+  blefaritis, katarak-senilis, glaukoma-akut, episkleritis, hifema). Tampil
+  di tab **Preklinik / Latihan**. 22 kasus lama → **terkunci** (tampil di tab
+  **Koas**, greyed + badge "🔒 Terkunci", klik → toast, tak bisa dimainkan).
+- **Chat UI dirampingkan**: area pesan/input dibatasi 880px ditengahkan
+  (bubble tak melebar), PatientCard di-slim. design.css tak tersentuh.
+- Sisanya seperti v0.15.0 di bawah.
 
 **LIVE PRODUCTION:** **https://ophtasim.duckdns.org** (AWS EC2 Sydney,
 HTTPS+HTTP/2, streaming WebSocket aktif). Ibu (dokter mata, target user)
@@ -108,6 +117,18 @@ sudo PUBLIC_ORIGIN=https://ophtasim.duckdns.org \
 # Smoke verifikasi
 curl -sI https://ophtasim.duckdns.org | head -1   # HTTP/2 200
 curl -s  https://ophtasim.duckdns.org/health      # {"success":true,...}
+
+# v0.16.0: setelah git pull, migrasi batch kasus (sekali jalan; kolom
+# `locked` auto via _ensure_runtime_columns saat backend restart).
+cd /opt/ophtha/backend
+NEW="kasus-101 kasus-102 kasus-103 kasus-104 kasus-105 kasus-106 kasus-107 kasus-108 kasus-109"
+./.venv/bin/python -m pipeline.ingest --all --no-embed       # ingest 9 baru (+ re-ingest 22 lama)
+./.venv/bin/python -m scripts.manage_cases lock-except $NEW  # kunci 22 lama
+OLD=$(for i in $(seq -w 1 22); do echo -n "kasus-$i "; done)
+./.venv/bin/python -m scripts.manage_cases set-stage koas $OLD       # 22 lama → tab Koas
+./.venv/bin/python -m scripts.manage_cases set-stage preklinik $NEW  # 9 baru → tab Preklinik
+./.venv/bin/python -m scripts.manage_cases list              # verifikasi: 9 aktif, 22 terkunci
+sudo systemctl restart ophtha-backend
 
 # Log + operasional
 journalctl -u ophtha-backend -f                   # tail backend

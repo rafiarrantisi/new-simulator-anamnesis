@@ -35,5 +35,9 @@ class CaseRegistry(Base):
     bagian_b_chars: Mapped[int] = mapped_column(default=0)
     has_disclosure_layers: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # v0.16.0: kasus "terkunci" — TETAP ditampilkan di library (is_active),
+    # tapi tak bisa dimainkan (greyed + lock badge). Dipakai utk mengarsipkan
+    # batch kasus lama saat batch baru (preklinik approved) jadi aktif.
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

@@ -30,6 +30,7 @@ def _summary(c: CaseRegistry) -> dict:
         "stage": c.stage or None,
         "caseType": c.case_type or None,
         "isActive": c.is_active,
+        "locked": bool(getattr(c, "locked", False)),
     }
 
 
@@ -80,6 +81,7 @@ class CaseMetadataIn(BaseModel):
     stage: str | None = None
     case_type: str | None = None
     is_active: bool | None = None
+    locked: bool | None = None  # v0.16.0
 
 
 class CaseCreateIn(BaseModel):

@@ -1,4 +1,9 @@
-"""Parser diuji terhadap 22 file kasus NYATA (bukan format ideal plan)."""
+"""Parser diuji terhadap file kasus NYATA (bukan format ideal plan).
+
+v0.16.0: korpus = 22 kasus lama (koas, terkunci) + 9 kasus baru PPK
+Kemenkes preklinik (kasus-101..109). Format baru: Bagian A 6 section,
+SKDI via "Tingkat Kemampuan", ICD inline. Parser additive (lihat parser.py).
+"""
 from pathlib import Path
 
 import pytest
@@ -10,7 +15,9 @@ CASES = sorted(Path(get_settings().cases_dir).glob("kasus-*.md"))
 
 
 def test_corpus_present():
-    assert len(CASES) == 22, f"Diharapkan 22 kasus, ditemukan {len(CASES)}"
+    # >=22: 22 lama + batch preklinik baru (9). Tak di-pin agar batch
+    # berikutnya tak memecah test.
+    assert len(CASES) >= 22, f"Korpus minimal 22 kasus, ditemukan {len(CASES)}"
 
 
 @pytest.mark.parametrize("path", CASES, ids=lambda p: p.name)
@@ -19,9 +26,10 @@ def test_parse_and_validate(path):
     errs = validate(pc)
     assert not errs, f"{path.name}: {errs}"
     assert pc.case_id.startswith("kasus-")
-    assert 1 <= pc.case_number <= 22
     assert pc.title_id, "title_id kosong"
-    assert len(pc.bagian_a_sections) >= 8
+    # Floor 6 (v0.16.0): kasus PPK preklinik punya 6 section Bagian A;
+    # kasus lama ~10. validate() pakai floor yg sama.
+    assert len(pc.bagian_a_sections) >= 6
     assert pc.bagian_b_text, "Bagian B kosong"
     # Section index Bagian A harus mulai dari 1 dan menaik
     idxs = [s.index for s in pc.bagian_a_sections]

@@ -6,12 +6,14 @@
 > Eye Photo Viewer aktif (v0.14.0) — tombol "👁 Lihat Kondisi Mata"
 > di header anamnesis muncul saat kasus punya foto. Developer Dashboard
 > (v0.15.0) aktif — login admin via .env, kelola kasus + upload foto
-> realtime tanpa rebuild.
+> realtime tanpa rebuild. v0.16.0: 9 kasus preklinik PPK Kemenkes (approved)
+> aktif; 22 kasus lama dikunci (tampil di tab Koas, tak bisa dimainkan);
+> chat UI dirampingkan.
 > Exam Simulator dorman (v0.11.0 keputusan user). Voice (Groq/ElevenLabs)
 > belum diaktifkan — degradasi mulus, arsitektur sudah siap.
 > Dokumen ini **sumber kebenaran tunggal** yang menjembatani semua chat
 > session.
-> Versi: `0.15.0` · Terakhir diubah: 2026-05-25
+> Versi: `0.16.0` · Terakhir diubah: 2026-06-02
 
 ---
 
@@ -348,7 +350,8 @@ Frontend hanya menerima **`CaseSummary`** (katalog), bukan persona:
 CaseSummary {
   caseId:"kasus-02", filename, title_id, title_en,
   icd10, skdi, organ_system, difficulty, tags[], references[],
-  stage?:'preklinik'|'koas', caseType?:'practice'|'osce', isActive
+  stage?:'preklinik'|'koas', caseType?:'practice'|'osce', isActive,
+  locked?:bool   // v0.16.0: tampil di library tapi tak bisa dimainkan
 }
 ```
 - **Bagian A** → server-only, di-chunk & embed ke Qdrant (RAG).
@@ -568,6 +571,51 @@ Default dipakai sampai diputuskan lain (backend-plan §11):
 
 ## 10. Changelog kontrak
 
+- `0.16.0` (2026-06-02): **Batch kasus preklinik PPK Kemenkes (9, approved) +
+  kasus lama dikunci + chat UI dirampingkan.** **(a) 9 kasus baru** (dosen/
+  dokter approved, preklinik) di `data-kasus/kasus-101..109-*.md`: dry-eye,
+  buta-senja, hordeolum, konjungtivitis-bakteri, blefaritis, katarak-senilis,
+  glaukoma-akut, episkleritis, hifema. ID `kasus-101..109` (range 1xx) dipilih
+  agar **tak tabrakan** dgn 22 kasus lama (`kasus-01..22`) — keduanya koeksis
+  di registry. **(b) Parser additive** (`pipeline/parser.py`, backward-compat
+  22 lama): kenali `**Referensi**` (bukan cuma `**Referensi Utama**`); ekstrak
+  SKDI dari `**Tingkat Kemampuan**: 4A` (format baru tanpa kata "SKDI"); ICD-10
+  inline dicari di mana saja bila kosong; floor section Bagian A diturunkan
+  8→**6** (kasus PPK preklinik punya 6 section: Diagnosis, Patofisiologi,
+  Faktor Risiko, Temuan Klinis, Komplikasi, Tatalaksana). **(c) Kasus
+  terkunci** (`CaseRegistry.locked` bool, default false): kasus **TETAP tampil**
+  di library (is_active) tapi **tak bisa dimainkan** (greyed + badge "🔒
+  Terkunci", klik → toast). Beda dari `is_active=false` (sembunyi total).
+  22 kasus lama → `locked=true` + `stage='koas'` (pindah ke tab Koas, jadi
+  tab Preklinik bersih isi 9 baru aktif). `_summary`/admin list +`locked`;
+  admin PATCH metadata terima `locked`; `GET /api/cases` tetap return locked
+  cases (mereka is_active) dgn flag. **Migrasi schema**: Alembic
+  `d3f9a07b1c22_cases_locked.py` + **`_ensure_runtime_columns()`** di
+  `database.py` (ALTER idempoten saat startup — live sqlite pakai create_all
+  yg tak meng-ALTER tabel existing; Alembic = sumber kebenaran Postgres/prod).
+  **(d) CLI** `scripts/manage_cases.py`: `list`/`lock`/`unlock`/`lock-except`/
+  `set-stage` — dipakai swap batch tanpa edit markdown. **(e) Frontend**:
+  `case-adapter.js` map `locked`; `CaseLibraryScreen` render locked card
+  (overlay + badge + toast, `pointerEvents:none` di kartu, no-nav); dashboard
+  `CaseAdminTable` +filter "Terkunci" +badge +tombol lock/unlock (🔒/🔓) &
+  hide/show (👁/🚫) terpisah. **(f) Chat UI dirampingkan** (user explicit
+  minta — `simulator.jsx` inline style only, **ZERO design.css**): area pesan
+  + quick chips + input dibatasi `maxWidth 880px` ditengahkan (bubble tak
+  melebar penuh, separator tetap full-width); `PatientCard` di-slim (padding
+  14→9px, orb 48→40) → ruang vertikal chat bertambah. `endRef.parentElement`
+  tetap scroller → auto-scroll tak berubah. **Verified**: pytest **79 passed,
+  1 skipped** (70 + 9 kasus baru parametrized; +1 locked round-trip test);
+  `npm run build` hijau; **CSS hash TETAP `index-Bj97HpXF.css`** (§8.1 utuh);
+  `git diff sistemnya/design.css` kosong. 9 kasus parse-verified (ICD/SKDI/
+  6-section/persona). **Konten klinis**: 9 kasus = **dosen/dokter approved**
+  (preklinik); persona Bagian B encode answer-restraint via "ATURAN
+  KOMUNIKASI" (orang awam, tak tahu istilah medis). **Pending eksplisit**:
+  (1) **Deploy EC2**: setelah `git pull`, jalankan `pipeline.ingest --all
+  --no-embed` + `scripts.manage_cases lock-except kasus-101..109` +
+  `set-stage koas kasus-01..22` di server (kolom locked auto via
+  `_ensure_runtime_columns`); (2) disclosure sidecar `### 0` utk 9 baru
+  (opsional — persona sudah encode restraint); (3) opsi "pindah patient info
+  ke sidebar kiri" (user sebut sbg alternatif, ditunda).
 - `0.15.0` (2026-05-25): **Developer Dashboard — admin CMS internal.**
   Tujuan: developer (solo) bisa kelola konten (kasus + foto mata) via UI
   tanpa SSH/git per perubahan. Engine kontrak (§3/§3A/§4) **tak tersentuh**;

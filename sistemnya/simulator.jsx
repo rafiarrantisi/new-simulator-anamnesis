@@ -13,12 +13,12 @@ const PatientCard = ({ caseData, sessionTime }) => {
   const secs = sessionTime % 60;
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 14,
-      padding: '14px 18px',
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '9px 18px',
       background: 'var(--surface)',
       borderBottom: '1px solid var(--border)',
     }}>
-      <EyeOrb size={48} tone={caseData.patientTone} animate />
+      <EyeOrb size={40} tone={caseData.patientTone} animate />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>
           {caseData.patientProfile.name}
@@ -604,10 +604,13 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
           entry di public/eye-photos/manifest.json (zero visual change). */}
       <EyePhotoBar caseId={caseData.id} />
 
-      {/* Messages area */}
+      {/* Messages area — dibatasi lebar & ditengahkan supaya bubble tak
+          melebar penuh (v0.16.0). endRef.parentElement = container ini
+          (tetap scroller) → auto-scroll tak berubah. */}
       <div style={{
         flex: 1, overflowY: 'auto', padding: '20px 24px',
         display: 'flex', flexDirection: 'column', gap: 12,
+        width: '100%', maxWidth: 880, margin: '0 auto',
       }}>
         {session.messages.map((msg, i) => (
           <MessageBubble key={msg.id} msg={msg} isNew={i >= session.messages.length - 2} showLiveFeedback={showLiveFeedback} />
@@ -618,9 +621,11 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
         <div ref={endRef} />
       </div>
 
-      {/* Quick chips — only in Normal & Tutorial, hidden in OSCE */}
+      {/* Quick chips — only in Normal & Tutorial, hidden in OSCE.
+          Separator full-width; isi chips ditengahkan selebar chat (880). */}
       {!isOSCE && (
         <div style={{ padding: '8px 20px 4px', borderTop: '1px solid var(--border)' }}>
+         <div style={{ maxWidth: 880, margin: '0 auto' }}>
           <QuickChipsRow
             suggestions={suggestions}
             usedDomains={session.discoveredDomains}
@@ -630,15 +635,19 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
           />
+         </div>
         </div>
       )}
 
-      {/* Input */}
+      {/* Input — separator full-width; kontrol ditengahkan selebar chat (880) */}
       <div style={{
         padding: isOSCE ? '14px 20px 18px' : '10px 20px 16px',
-        display: 'flex', gap: 10, alignItems: 'flex-end',
         borderTop: isOSCE ? '1px solid var(--border)' : 'none',
       }}>
+       <div style={{
+        display: 'flex', gap: 10, alignItems: 'flex-end',
+        maxWidth: 880, margin: '0 auto',
+       }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <textarea
             ref={inputRef}
@@ -676,6 +685,7 @@ const ConversationPanel = ({ caseData, session, onSend, onEnd, mode = 'normal' }
             Akhiri
           </Btn>
         )}
+       </div>
       </div>
     </div>
   );

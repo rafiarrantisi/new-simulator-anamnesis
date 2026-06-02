@@ -62,6 +62,8 @@ function adaptCaseSummary(cs) {
     responses: { default: { text: '', found: null, isRedFlag: false } },
     icd10: cs.icd10 || '',
     skdi: cs.skdi || '',
+    // v0.16.0: kasus terkunci — tampil di library tapi tak bisa dimainkan.
+    locked: !!cs.locked,
   };
 }
 

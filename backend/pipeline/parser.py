@@ -22,6 +22,9 @@ _TITLE_RE = re.compile(r"^#\s*KASUS\s+(\d+)\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _TITLE_EN_RE = re.compile(r"\((.+)\)\s*$")
 _ICD_RE = re.compile(r"ICD-?10\s*:?\s*([A-Z]\d+(?:\.\d+)?)", re.IGNORECASE)
 _SKDI_RE = re.compile(r"SKDI\**\s*:?\**\s*\(?\s*([0-9]+\s*[AB]?)", re.IGNORECASE)
+# Format kasus baru (PPK Kemenkes preklinik, v0.16.0): SKDI ditulis sbg
+# "**Tingkat Kemampuan**: 4A" tanpa kata "SKDI". Ekstrak level di sini.
+_TINGKAT_RE = re.compile(r"Tingkat\s+Kemampuan\**\s*(?:SKDI)?\**\s*:?\**\s*\(?\s*([0-9]+\s*[AB]?)", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^###\s+(\d+)\.\s*(.+?)\s*$")
 _BAGIAN_A_RE = re.compile(r"^##\s+BAGIAN\s+A\b", re.IGNORECASE)
 _BAGIAN_B_RE = re.compile(r"^##\s+BAGIAN\s+B\b", re.IGNORECASE)
@@ -103,9 +106,17 @@ def parse_file(path: str | Path) -> ParsedCase:
                 title_id = raw_title[: em.start()].strip()
             else:
                 title_id = raw_title
-        if line.strip().startswith("**Referensi Utama**") and not references:
+        # Referensi: terima "**Referensi Utama**" (22 kasus lama) DAN
+        # "**Referensi**" (format PPK Kemenkes baru, v0.16.0).
+        if line.strip().startswith("**Referensi") and not references:
             ref_body = line.split(":", 1)[1] if ":" in line else ""
             references = [r.strip() for r in ref_body.split(";") if r.strip()]
+            im = _ICD_RE.search(line)
+            if im:
+                icd10 = im.group(1).upper()
+        # ICD-10 juga bisa muncul di luar baris Referensi (format baru
+        # menaruh ICD inline di baris yg sama). Cari di mana saja bila kosong.
+        if not icd10:
             im = _ICD_RE.search(line)
             if im:
                 icd10 = im.group(1).upper()
@@ -113,6 +124,11 @@ def parse_file(path: str | Path) -> ParsedCase:
             sm = _SKDI_RE.search(line)
             if sm:
                 skdi = sm.group(1).replace(" ", "").upper()
+        # Format baru: "**Tingkat Kemampuan**: 4A" (tanpa kata SKDI).
+        if not skdi and "tingkat kemampuan" in line.lower():
+            tm = _TINGKAT_RE.search(line)
+            if tm:
+                skdi = tm.group(1).replace(" ", "").upper()
 
     # Split Bagian A / B
     lines = text.splitlines()
@@ -169,8 +185,11 @@ def validate(pc: ParsedCase) -> list[str]:
         errs.append("File terlalu pendek (<1000 char)")
     if not pc.bagian_a_sections:
         errs.append("Bagian A / section `### N.` tidak ditemukan")
-    if len(pc.bagian_a_sections) < 8:
-        errs.append(f"Bagian A hanya {len(pc.bagian_a_sections)} section (harap ~10)")
+    # Ambang min 6 section (v0.16.0): kasus PPK Kemenkes preklinik punya 6
+    # section Bagian A (Diagnosis, Patofisiologi, Faktor Risiko, Temuan
+    # Klinis, Komplikasi, Tatalaksana); kasus lama ~10. 6 = lantai aman.
+    if len(pc.bagian_a_sections) < 6:
+        errs.append(f"Bagian A hanya {len(pc.bagian_a_sections)} section (min 6)")
     if not pc.bagian_b_text:
         errs.append("Bagian B (persona) tidak ditemukan")
     # has_disclosure_layers: RECOMMENDED, bukan error (kontrak §5.7 — Fase 3)

@@ -212,6 +212,26 @@ def test_admin_reingest_case(admin_h):
     assert r.status_code == 200, r.text
 
 
+def test_admin_lock_unlock_case(admin_h):
+    """v0.16.0: locked round-trip via admin PATCH + reflected di list & public."""
+    # Lock
+    r = client.patch(f"/api/admin/cases/{_NEW_CASE_ID}", headers=admin_h,
+                     json={"metadata": {"locked": True}})
+    assert r.status_code == 200, r.text
+    # Admin list mencerminkan locked=true
+    lst = client.get("/api/admin/cases", headers=admin_h).json()["data"]
+    row = next(c for c in lst if c["caseId"] == _NEW_CASE_ID)
+    assert row["locked"] is True
+    # GET publik /api/cases tetap menampilkan kasus (is_active) + flag locked
+    pub = client.get("/api/cases").json()["data"]
+    prow = next((c for c in pub if c["caseId"] == _NEW_CASE_ID), None)
+    assert prow is not None and prow["locked"] is True
+    # Unlock kembali
+    r2 = client.patch(f"/api/admin/cases/{_NEW_CASE_ID}", headers=admin_h,
+                      json={"metadata": {"locked": False}})
+    assert r2.status_code == 200, r2.text
+
+
 # ── Eye Photos ────────────────────────────────────────────────────────────
 _PNG_1X1 = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"

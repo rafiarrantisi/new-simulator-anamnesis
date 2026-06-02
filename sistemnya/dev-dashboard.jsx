@@ -140,6 +140,21 @@ const CaseAdminTable = ({ onEdit, onCreate, refreshTrigger }) => {
     }
   };
 
+  // v0.16.0: lock/unlock — kasus terkunci tetap tampil di library tapi
+  // tak bisa dimainkan (greyed + badge). Beda dari is_active (sembunyi total).
+  const handleToggleLocked = async (c) => {
+    try {
+      await __adminFetch(`/api/admin/cases/${encodeURIComponent(c.caseId)}`, {
+        method: 'PATCH',
+        body: { metadata: { locked: !c.locked } },
+      });
+      toast.show(`${c.caseId} ${!c.locked ? 'dikunci' : 'dibuka'}`, 'success');
+      reload();
+    } catch (e) {
+      toast.show(`Toggle gagal: ${e.message}`, 'error');
+    }
+  };
+
   if (error) return (
     <div style={__ds.card}>
       <p style={{ color: 'var(--red, #dc2626)', fontSize: 13 }}>⚠ Gagal load kasus: {error}</p>
@@ -149,7 +164,8 @@ const CaseAdminTable = ({ onEdit, onCreate, refreshTrigger }) => {
   if (!cases) return <div style={__ds.card}><LoadingDots /></div>;
 
   const filtered = cases.filter(c => {
-    if (filter === 'active') return c.isActive;
+    if (filter === 'active') return c.isActive && !c.locked;
+    if (filter === 'locked') return c.locked;
     if (filter === 'disabled') return !c.isActive;
     return true;
   });
@@ -159,7 +175,7 @@ const CaseAdminTable = ({ onEdit, onCreate, refreshTrigger }) => {
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 6 }}>
-          {[['all', 'Semua'], ['active', 'Aktif'], ['disabled', 'Nonaktif']].map(([id, label]) => (
+          {[['all', 'Semua'], ['active', 'Aktif'], ['locked', 'Terkunci'], ['disabled', 'Nonaktif']].map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)} style={{
               ...__ds.tabBtn(filter === id), padding: '6px 12px', fontSize: 11,
             }}>{label}</button>
@@ -210,11 +226,18 @@ const CaseAdminTable = ({ onEdit, onCreate, refreshTrigger }) => {
                     }}>{c.photoCount || 0}</span>
                   </td>
                   <td style={__ds.td}>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6,
-                      background: c.isActive ? 'rgba(34,197,94,0.15)' : 'rgba(220,38,38,0.12)',
-                      color: c.isActive ? '#16a34a' : '#dc2626',
-                    }}>{c.isActive ? 'AKTIF' : 'NONAKTIF'}</span>
+                    {c.locked ? (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6,
+                        background: 'rgba(99,102,241,0.15)', color: 'var(--primary)',
+                      }}>🔒 TERKUNCI</span>
+                    ) : (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6,
+                        background: c.isActive ? 'rgba(34,197,94,0.15)' : 'rgba(220,38,38,0.12)',
+                        color: c.isActive ? '#16a34a' : '#dc2626',
+                      }}>{c.isActive ? 'AKTIF' : 'NONAKTIF'}</span>
+                    )}
                     {!c.hasMarkdown && (
                       <span style={{
                         marginLeft: 6, fontSize: 10, padding: '3px 8px', borderRadius: 6,
@@ -230,9 +253,12 @@ const CaseAdminTable = ({ onEdit, onCreate, refreshTrigger }) => {
                       <button onClick={() => handleReingest(c.caseId)} title="Re-ingest"
                         style={{ background: 'var(--surface-2)', border: 'none', padding: '5px 10px',
                                   borderRadius: 8, cursor: 'pointer', fontSize: 12 }}>🔄</button>
-                      <button onClick={() => handleToggleActive(c)} title={c.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                      <button onClick={() => handleToggleLocked(c)} title={c.locked ? 'Buka kunci (jadikan bisa dimainkan)' : 'Kunci (tampil tapi tak bisa dimainkan)'}
                         style={{ background: 'var(--surface-2)', border: 'none', padding: '5px 10px',
-                                  borderRadius: 8, cursor: 'pointer', fontSize: 12 }}>{c.isActive ? '🔒' : '🔓'}</button>
+                                  borderRadius: 8, cursor: 'pointer', fontSize: 12 }}>{c.locked ? '🔓' : '🔒'}</button>
+                      <button onClick={() => handleToggleActive(c)} title={c.isActive ? 'Sembunyikan (nonaktif total)' : 'Aktifkan'}
+                        style={{ background: 'var(--surface-2)', border: 'none', padding: '5px 10px',
+                                  borderRadius: 8, cursor: 'pointer', fontSize: 12 }}>{c.isActive ? '👁' : '🚫'}</button>
                     </div>
                   </td>
                 </tr>
