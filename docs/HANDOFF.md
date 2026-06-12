@@ -64,9 +64,28 @@ sudah bisa coba penuh.
   `index-Bj97HpXF.css` (terbukti tiap commit dari v0.9.0–v0.13.0).
 - **Backend** (`backend/`): FastAPI domain-modular, JWT, Alembic, RAG
   (BM25 + answer-restraint + LLM-judge), STT/TTS endpoint, prod-guard/
-  headers/rate-limit. **56 pytest passed, 1 skipped**.
+  headers/rate-limit, **Developer Dashboard admin** (v0.15.0). **79 pytest
+  passed, 1 skipped**.
 - GitHub: `rafiarrantisi/new-simulator-anamnesis` (`main`).
-  Latest commit Tier A: `617ea53`.
+  Latest commit: `3044f2d` (v0.16.0 + deploy fixes).
+
+### Status deploy EC2 (per sesi v0.16.0 — PENTING)
+- v0.15.0 + v0.16.0 **sudah di-deploy** ke EC2 (live). 9 kasus preklinik
+  aktif, 22 lama terkunci, chat ramping — terverifikasi port 80 + DB.
+- **GOTCHA HTTPS (sudah di-fix di kode, tapi ingat):** `setup.sh` menimpa
+  config nginx tiap run dgn template HTTP-only → blok `listen 443 ssl` dari
+  certbot HILANG → HTTPS mati. **Fix (commit 9dad18b):** `setup.sh` kini
+  self-heal — deteksi cert Let's Encrypt existing + blok 443 hilang → otomatis
+  `certbot --nginx --keep-until-expiring`. Bila masih mati manual:
+  `sudo certbot --nginx -d ophtasim.duckdns.org --redirect -n --agree-tos -m arrantisi.online@gmail.com`.
+- **Script deploy baru:** `deploy/apply-update.sh` (turnkey: setup.sh +
+  ingest + lock + admin + verify), `backend/scripts/manage_cases.py`
+  (lock/unlock/set-stage), `backend/scripts/set_admin.py` (set/reset admin
+  langsung di DB — anti-gagal vs .env seed), `scripts/hash_admin_password.py`.
+- **Akun admin dashboard:** seed via `.env` (ADMIN_EMAIL+HASH) KADANG gagal
+  (parsing `$` di hash). Cara andal = `python -m scripts.set_admin <email>
+  '<pw>'` di server (buat/reset langsung di DB). **Status terakhir sesi:**
+  user sedang set admin via set_admin.py (belum dikonfirmasi berhasil login).
 
 ## 2. Layout repo
 
